@@ -1,0 +1,119 @@
+erDiagram
+    USERS {
+        uuid id PK
+        varchar full_name
+        varchar email UK
+        text password_hash
+        varchar phone
+        varchar role "PARENT_CAREGIVER | SOCIAL_WORKER"
+        varchar account_status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CHILDREN {
+        uuid id PK
+        varchar first_name
+        varchar last_name
+        date date_of_birth
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    FAMILY_RELATIONSHIPS {
+        uuid id PK
+        uuid child_id FK
+        uuid user_id FK
+        varchar relationship_type
+        boolean is_primary_caregiver
+        timestamptz created_at
+    }
+
+    MAINTENANCE_ARRANGEMENTS {
+        uuid id PK
+        uuid child_id FK
+        uuid paying_user_id FK
+        uuid receiving_user_id FK
+        decimal expected_amount "DECIMAL(12,2)"
+        char currency "ZAR"
+        varchar frequency
+        date start_date
+        date end_date
+        varchar status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    PAYMENTS {
+        uuid id PK
+        uuid arrangement_id FK
+        uuid child_id FK
+        uuid paying_user_id FK
+        uuid receiving_user_id FK
+        decimal amount "DECIMAL(12,2)"
+        decimal confirmed_amount "DECIMAL(12,2)"
+        char currency "ZAR"
+        date payment_date
+        varchar payment_method
+        varchar payment_reference
+        varchar status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    PAYMENT_EVIDENCE {
+        uuid id PK
+        uuid payment_id FK
+        uuid uploaded_by FK
+        varchar file_name
+        text file_url
+        text description
+        timestamptz uploaded_at
+    }
+
+    SOCIAL_WORKER_ASSIGNMENTS {
+        uuid id PK
+        uuid social_worker_id FK
+        uuid child_id FK
+        uuid assigned_by FK
+        varchar assignment_status
+        timestamptz assigned_at
+    }
+
+    PAYMENT_REVIEWS {
+        uuid id PK
+        uuid payment_id FK
+        uuid reviewed_by FK
+        varchar review_status
+        text review_notes
+        timestamptz reviewed_at
+    }
+
+    PROFESSIONAL_NOTES {
+        uuid id PK
+        uuid social_worker_id FK
+        uuid child_id FK
+        text note
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    USERS ||--o{ CHILDREN : "creates (created_by)"
+    USERS ||--o{ FAMILY_RELATIONSHIPS : "linked via"
+    CHILDREN ||--o{ FAMILY_RELATIONSHIPS : "has caregivers"
+    CHILDREN ||--o{ MAINTENANCE_ARRANGEMENTS : "covered by"
+    USERS ||--o{ MAINTENANCE_ARRANGEMENTS : "pays (paying_user_id)"
+    USERS ||--o{ MAINTENANCE_ARRANGEMENTS : "receives (receiving_user_id)"
+    MAINTENANCE_ARRANGEMENTS ||--o{ PAYMENTS : "tracks"
+    CHILDREN ||--o{ PAYMENTS : "for child (composite FK)"
+    USERS ||--o{ PAYMENTS : "submits (paying_user_id)"
+    USERS ||--o{ PAYMENTS : "confirms (receiving_user_id)"
+    PAYMENTS ||--o{ PAYMENT_EVIDENCE : "supported by"
+    USERS ||--o{ PAYMENT_EVIDENCE : "uploads"
+    USERS ||--o{ SOCIAL_WORKER_ASSIGNMENTS : "assigned as worker"
+    CHILDREN ||--o{ SOCIAL_WORKER_ASSIGNMENTS : "assigned to worker"
+    PAYMENTS ||--o{ PAYMENT_REVIEWS : "reviewed in"
+    USERS ||--o{ PAYMENT_REVIEWS : "reviews"
+    USERS ||--o{ PROFESSIONAL_NOTES : "writes"
+    CHILDREN ||--o{ PROFESSIONAL_NOTES : "has case notes"
