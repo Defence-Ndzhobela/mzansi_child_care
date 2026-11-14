@@ -6,7 +6,6 @@ export interface User {
   id: string;
   fullName: string;
   email: string;
-  password: string; // Demo-only local storage password
   phone: string;
   role: UserRole;
   accountStatus: AccountStatus;

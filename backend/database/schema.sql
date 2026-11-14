@@ -1,12 +1,12 @@
 -- ============================================================================
 -- MZANSI CHILDCARE — POSTGRESQL DATABASE SCHEMA (9 TABLES)
 -- ============================================================================
--- Purpose: Future backend database design for tracking child maintenance
+-- Purpose: Backend database design for tracking child maintenance
 --          arrangements, payment submissions, recipient confirmations,
 --          payment evidence metadata, and social worker case reviews.
 -- Currency: South African Rand (ZAR) stored as DECIMAL(12,2).
--- Note:    This schema is for future backend development. The current frontend
---          prototype uses localStorage and fictional demo data only.
+-- Note:    Authentication uses this database. The current dashboard prototype
+--          still uses localStorage and fictional demo data only.
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -249,14 +249,15 @@ CREATE INDEX idx_prof_notes_worker ON professional_notes(social_worker_id);
 -- ============================================================================
 -- SAMPLE FICTIONAL DEMO DATA (INSERT STATEMENTS)
 -- All names, emails, and figures are strictly fictional demonstration data.
+-- Demo password for these accounts: Demo@12345. Never use these accounts in production.
 -- ============================================================================
 
 INSERT INTO users (id, full_name, email, password_hash, phone, role, account_status) VALUES
-    ('11111111-1111-4111-8111-111111111101', 'Thandiwe Mokoena', 'parent@demo.co.za', '$2b$12$demoHashPlaceholderForThandiwe', '+27 82 555 0141', 'PARENT_CAREGIVER', 'ACTIVE'),
-    ('11111111-1111-4111-8111-111111111102', 'Sipho Mokoena', 'sipho@demo.co.za', '$2b$12$demoHashPlaceholderForSipho', '+27 83 555 0198', 'PARENT_CAREGIVER', 'ACTIVE'),
-    ('11111111-1111-4111-8111-111111111103', 'Nomsa Dlamini', 'worker@demo.co.za', '$2b$12$demoHashPlaceholderForNomsa', '+27 11 555 0110', 'SOCIAL_WORKER', 'ACTIVE'),
-    ('11111111-1111-4111-8111-111111111104', 'Lerato Khumalo', 'lerato.khumalo@demo.co.za', '$2b$12$demoHashPlaceholderForLerato', '+27 72 555 0175', 'PARENT_CAREGIVER', 'ACTIVE'),
-    ('11111111-1111-4111-8111-111111111105', 'Kabelo Khumalo', 'kabelo.khumalo@demo.co.za', '$2b$12$demoHashPlaceholderForKabelo', '+27 76 555 0162', 'PARENT_CAREGIVER', 'ACTIVE');
+    ('11111111-1111-4111-8111-111111111101', 'Thandiwe Mokoena', 'parent@demo.co.za', crypt('Demo@12345', gen_salt('bf', 12)), '+27 82 555 0141', 'PARENT_CAREGIVER', 'ACTIVE'),
+    ('11111111-1111-4111-8111-111111111102', 'Sipho Mokoena', 'sipho@demo.co.za', crypt('Demo@12345', gen_salt('bf', 12)), '+27 83 555 0198', 'PARENT_CAREGIVER', 'ACTIVE'),
+    ('11111111-1111-4111-8111-111111111103', 'Nomsa Dlamini', 'worker@demo.co.za', crypt('Demo@12345', gen_salt('bf', 12)), '+27 11 555 0110', 'SOCIAL_WORKER', 'ACTIVE'),
+    ('11111111-1111-4111-8111-111111111104', 'Lerato Khumalo', 'lerato.khumalo@demo.co.za', crypt('Demo@12345', gen_salt('bf', 12)), '+27 72 555 0175', 'PARENT_CAREGIVER', 'ACTIVE'),
+    ('11111111-1111-4111-8111-111111111105', 'Kabelo Khumalo', 'kabelo.khumalo@demo.co.za', crypt('Demo@12345', gen_salt('bf', 12)), '+27 76 555 0162', 'PARENT_CAREGIVER', 'ACTIVE');
 
 INSERT INTO children (id, first_name, last_name, date_of_birth, created_by) VALUES
     ('22222222-2222-4222-8222-222222222201', 'Thabo', 'Mokoena', '2018-04-14', '11111111-1111-4111-8111-111111111101'),

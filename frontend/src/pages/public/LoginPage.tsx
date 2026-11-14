@@ -10,8 +10,9 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!email.trim() || !password) {
@@ -19,7 +20,9 @@ export function LoginPage() {
       return;
     }
 
-    const res = login(email, password);
+    setSubmitting(true);
+    const res = await login(email, password);
+    setSubmitting(false);
     if (!res.ok || !res.user) {
       setError(res.error ?? 'Unable to sign in.');
       return;
@@ -89,9 +92,10 @@ export function LoginPage() {
 
             <button
               type="submit"
-              className="w-full rounded-sm bg-[#006847] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#005238] transition-colors"
+              disabled={submitting}
+              className="w-full rounded-sm bg-[#006847] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#005238] transition-colors disabled:opacity-60"
             >
-              Sign In
+              {submitting ? 'Signing in...' : 'Sign In'}
             </button>
 
             <p className="text-center text-xs text-slate-600 pt-1">
@@ -107,7 +111,7 @@ export function LoginPage() {
           <div className="border border-slate-200 bg-slate-50 p-4 rounded-sm">
             <h2 className="font-display text-base font-semibold text-[#0F2942]">Demo accounts</h2>
             <p className="mt-1 text-xs text-slate-600">
-              Demo sign-in uses this browser. Do not reuse a real password.
+              Demo accounts use the database. Do not reuse a real password.
             </p>
 
             <div className="mt-3 space-y-2">
@@ -116,14 +120,14 @@ export function LoginPage() {
                   <p className="text-xs font-semibold text-[#006847]">Caregiver · Receiving</p>
                   <button
                     type="button"
-                    onClick={() => fillDemo('parent@demo.co.za', 'Parent123!')}
+                    onClick={() => fillDemo('parent@demo.co.za', 'Demo@12345')}
                     className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
                   >
                     Use account
                   </button>
                 </div>
                 <p className="mt-1 font-mono text-xs text-slate-800">
-                  parent@demo.co.za / Parent123!
+                  parent@demo.co.za / Demo@12345
                 </p>
               </div>
 
@@ -132,14 +136,14 @@ export function LoginPage() {
                   <p className="text-xs font-semibold text-[#0F2942]">Caregiver · Paying</p>
                   <button
                     type="button"
-                    onClick={() => fillDemo('sipho@demo.co.za', 'Parent123!')}
+                    onClick={() => fillDemo('sipho@demo.co.za', 'Demo@12345')}
                     className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
                   >
                     Use account
                   </button>
                 </div>
                 <p className="mt-1 font-mono text-xs text-slate-800">
-                  sipho@demo.co.za / Parent123!
+                  sipho@demo.co.za / Demo@12345
                 </p>
               </div>
 
@@ -148,14 +152,14 @@ export function LoginPage() {
                   <p className="text-xs font-semibold text-[#0F2942]">Social worker</p>
                   <button
                     type="button"
-                    onClick={() => fillDemo('worker@demo.co.za', 'Worker123!')}
+                    onClick={() => fillDemo('worker@demo.co.za', 'Demo@12345')}
                     className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
                   >
                     Use account
                   </button>
                 </div>
                 <p className="mt-1 font-mono text-xs text-slate-800">
-                  worker@demo.co.za / Worker123!
+                  worker@demo.co.za / Demo@12345
                 </p>
               </div>
             </div>

@@ -1,102 +1,126 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import { User } from '../types';
-import { loadSession, saveSession } from '../services/storageService';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { User, UserRole } from '../types';
 import { useData } from './DataContext';
+
+interface AuthUser {
+  id: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+}
 
 interface AuthContextValue {
   currentUser: User | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => { ok: boolean; user?: User; error?: string };
-  registerParent: (input: {
-    fullName: string;
-    email: string;
-    phone: string;
-    password: string;
-    region: string;
-  }) => { ok: boolean; user?: User; error?: string };
-  logout: () => void;
-  switchDemoFamilyUser: (userId: string) => void;
+  isLoading: boolean;
+  sessionError: string | null;
+  login: (email: string, password: string) => Promise<{ ok: boolean; user?: AuthUser; error?: string }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function isAuthUser(value: unknown): value is AuthUser {
+  if (!value || typeof value !== 'object') return false;
+  const user = value as Record<string, unknown>;
+  return typeof user.id === 'string' && typeof user.fullName === 'string' &&
+    typeof user.email === 'string' &&
+    (user.role === 'PARENT_CAREGIVER' || user.role === 'SOCIAL_WORKER');
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { db, addUser } = useData();
-  const [sessionUserId, setSessionUserId] = useState<string | null>(() => {
-    const stored = loadSession();
-    return stored?.userId ?? null;
-  });
+  const { db } = useData();
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const authVersion = useRef(0);
 
-  const currentUser = useMemo(() => {
-    if (!sessionUserId) return null;
-    return db.users.find((u) => u.id === sessionUserId) ?? null;
-  }, [db.users, sessionUserId]);
+  useEffect(() => {
+    let active = true;
+    const version = authVersion.current;
+    async function restoreSession() {
+      try {
+        const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        if (response.status === 401) return;
+        if (!response.ok) throw new Error('Session check failed');
+        const body: unknown = await response.json();
+        if (!body || typeof body !== 'object' || !('user' in body) || !isAuthUser(body.user)) {
+          throw new Error('Invalid session response');
+        }
+        if (active && version === authVersion.current) setAuthUser(body.user);
+      } catch {
+        if (active && version === authVersion.current) {
+          setSessionError('Unable to verify your session. Check the backend connection and reload.');
+        }
+      } finally {
+        if (active && version === authVersion.current) setIsLoading(false);
+      }
+    }
+    void restoreSession();
+    return () => { active = false; };
+  }, []);
 
-  const login = (email: string, password: string) => {
-    const normalized = email.trim().toLowerCase();
-    const user = db.users.find((u) => u.email.toLowerCase() === normalized);
-    if (!user) {
-      return { ok: false, error: 'No account found with that email address.' };
+  const currentUser = useMemo((): User | null => {
+    if (!authUser) return null;
+    const demoUser = db.users.find((user) => user.id === authUser.id);
+    return {
+      phone: '',
+      accountStatus: 'ACTIVE',
+      createdAt: '',
+      updatedAt: '',
+      ...demoUser,
+      ...authUser,
+      fullName: demoUser?.fullName ?? authUser.fullName,
+    };
+  }, [authUser, db.users]);
+
+  const login: AuthContextValue['login'] = async (email, password) => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (response.status === 401) {
+        return { ok: false, error: 'Invalid email or password, or account unavailable.' };
+      }
+      if (!response.ok) return { ok: false, error: 'Unable to sign in. Please try again.' };
+      const body: unknown = await response.json();
+      if (!body || typeof body !== 'object' || !('user' in body) || !isAuthUser(body.user)) {
+        return { ok: false, error: 'The server returned an invalid response.' };
+      }
+      authVersion.current += 1;
+      setAuthUser(body.user);
+      setSessionError(null);
+      setIsLoading(false);
+      return { ok: true, user: body.user };
+    } catch {
+      return { ok: false, error: 'Unable to reach the login server. Please try again.' };
     }
-    if (user.password !== password) {
-      return { ok: false, error: 'Incorrect password.' };
-    }
-    if (user.accountStatus !== 'ACTIVE') {
-      return { ok: false, error: 'This account is inactive.' };
-    }
-    setSessionUserId(user.id);
-    saveSession({ userId: user.id, loggedInAt: new Date().toISOString() });
-    return { ok: true, user };
   };
 
-  const registerParent = (input: {
-    fullName: string;
-    email: string;
-    phone: string;
-    password: string;
-    region: string;
-  }) => {
-    const normalized = input.email.trim().toLowerCase();
-    const existing = db.users.find((u) => u.email.toLowerCase() === normalized);
-    if (existing) {
-      return { ok: false, error: 'An account with this email address already exists.' };
-    }
-    const created = addUser({
-      fullName: input.fullName.trim(),
-      email: normalized,
-      phone: input.phone.trim(),
-      password: input.password,
-      role: 'PARENT_CAREGIVER',
-      region: input.region.trim() || 'South Africa',
+  const logout = async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
     });
-    setSessionUserId(created.id);
-    saveSession({ userId: created.id, loggedInAt: new Date().toISOString() });
-    return { ok: true, user: created };
-  };
-
-  const logout = () => {
-    setSessionUserId(null);
-    saveSession(null);
-  };
-
-  const switchDemoFamilyUser = (userId: string) => {
-    const target = db.users.find((u) => u.id === userId && u.role === 'PARENT_CAREGIVER');
-    if (!target) return;
-    setSessionUserId(target.id);
-    saveSession({ userId: target.id, loggedInAt: new Date().toISOString() });
+    if (!response.ok) throw new Error('Unable to sign out.');
+    authVersion.current += 1;
+    setAuthUser(null);
+    setSessionError(null);
+    setIsLoading(false);
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        isAuthenticated: Boolean(currentUser),
-        login,
-        registerParent,
-        logout,
-        switchDemoFamilyUser,
-      }}
-    >
+    <AuthContext.Provider value={{
+      currentUser,
+      isAuthenticated: Boolean(currentUser),
+      isLoading,
+      sessionError,
+      login,
+      logout,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -104,8 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used inside AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
 }

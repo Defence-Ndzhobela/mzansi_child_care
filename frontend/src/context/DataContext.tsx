@@ -13,22 +13,12 @@ import {
   ProfessionalNote,
   RelationshipType,
   ReviewStatus,
-  User,
-  UserRole,
 } from '../types';
 import { loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
 import { generateId } from '../utils/format';
 
 interface DataContextValue {
   db: AppDatabaseState;
-  addUser: (input: {
-    fullName: string;
-    email: string;
-    phone: string;
-    password: string;
-    role: UserRole;
-    region: string;
-  }) => User;
   updateUserProfile: (
     userId: string,
     updates: { fullName: string; phone: string; region?: string }
@@ -131,27 +121,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       saveDatabase(next);
       return next;
     });
-  };
-
-  const addUser: DataContextValue['addUser'] = (input) => {
-    const now = new Date().toISOString();
-    const newUser: User = {
-      id: generateId('user'),
-      fullName: input.fullName,
-      email: input.email,
-      password: input.password,
-      phone: input.phone,
-      role: input.role,
-      accountStatus: 'ACTIVE',
-      region: input.region,
-      createdAt: now,
-      updatedAt: now,
-    };
-    commit((prev) => ({
-      ...prev,
-      users: [...prev.users, newUser],
-    }));
-    return newUser;
   };
 
   const updateUserProfile: DataContextValue['updateUserProfile'] = (userId, updates) => {
@@ -613,7 +582,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     <DataContext.Provider
       value={{
         db,
-        addUser,
         updateUserProfile,
         addChild,
         updateChild,

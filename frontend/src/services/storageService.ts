@@ -2,38 +2,54 @@ import { SEED_DATA } from '../data/seedData';
 import { AppDatabaseState } from '../types';
 
 const DB_STORAGE_KEY = 'mzansi_childcare_db_v1';
-const SESSION_STORAGE_KEY = 'mzansi_childcare_session_v1';
 
-export interface StoredSession {
-  userId: string;
-  loggedInAt: string;
+const DEMO_USER_IDS = new Map([
+  ['user-parent-thandiwe', '11111111-1111-4111-8111-111111111101'],
+  ['user-parent-sipho', '11111111-1111-4111-8111-111111111102'],
+  ['user-worker-nomsa', '11111111-1111-4111-8111-111111111103'],
+  ['user-parent-lerato', '11111111-1111-4111-8111-111111111104'],
+  ['user-parent-kabelo', '11111111-1111-4111-8111-111111111105'],
+]);
+
+function migrateDemoData(raw: string): Partial<AppDatabaseState> {
+  return JSON.parse(raw, (key, value: unknown) => {
+    if (key === 'password') return undefined;
+    return typeof value === 'string' ? DEMO_USER_IDS.get(value) ?? value : value;
+  }) as Partial<AppDatabaseState>;
+}
+
+function freshDemoData(): AppDatabaseState {
+  return migrateDemoData(JSON.stringify(SEED_DATA)) as AppDatabaseState;
 }
 
 export function loadDatabase(): AppDatabaseState {
   try {
     const raw = localStorage.getItem(DB_STORAGE_KEY);
     if (!raw) {
-      const cloned = structuredClone(SEED_DATA);
+      const cloned = freshDemoData();
       localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(cloned));
       return cloned;
     }
-    const parsed = JSON.parse(raw) as Partial<AppDatabaseState>;
+    const parsed = migrateDemoData(raw);
     // Ensure all expected collections exist
-    return {
-      users: parsed.users ?? structuredClone(SEED_DATA.users),
-      children: parsed.children ?? structuredClone(SEED_DATA.children),
-      familyRelationships: parsed.familyRelationships ?? structuredClone(SEED_DATA.familyRelationships),
-      arrangements: parsed.arrangements ?? structuredClone(SEED_DATA.arrangements),
-      payments: parsed.payments ?? structuredClone(SEED_DATA.payments),
-      evidence: parsed.evidence ?? structuredClone(SEED_DATA.evidence),
-      assignments: parsed.assignments ?? structuredClone(SEED_DATA.assignments),
-      reviews: parsed.reviews ?? structuredClone(SEED_DATA.reviews),
-      professionalNotes: parsed.professionalNotes ?? structuredClone(SEED_DATA.professionalNotes),
-      concerns: parsed.concerns ?? structuredClone(SEED_DATA.concerns),
-      notifications: parsed.notifications ?? structuredClone(SEED_DATA.notifications),
+    const seed = freshDemoData();
+    const migrated = {
+      users: parsed.users ?? seed.users,
+      children: parsed.children ?? seed.children,
+      familyRelationships: parsed.familyRelationships ?? seed.familyRelationships,
+      arrangements: parsed.arrangements ?? seed.arrangements,
+      payments: parsed.payments ?? seed.payments,
+      evidence: parsed.evidence ?? seed.evidence,
+      assignments: parsed.assignments ?? seed.assignments,
+      reviews: parsed.reviews ?? seed.reviews,
+      professionalNotes: parsed.professionalNotes ?? seed.professionalNotes,
+      concerns: parsed.concerns ?? seed.concerns,
+      notifications: parsed.notifications ?? seed.notifications,
     };
+    localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(migrated));
+    return migrated;
   } catch {
-    const fallback = structuredClone(SEED_DATA);
+    const fallback = freshDemoData();
     localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(fallback));
     return fallback;
   }
@@ -44,25 +60,7 @@ export function saveDatabase(state: AppDatabaseState): void {
 }
 
 export function resetDatabaseStorage(): AppDatabaseState {
-  const fresh = structuredClone(SEED_DATA);
+  const fresh = freshDemoData();
   localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(fresh));
   return fresh;
-}
-
-export function loadSession(): StoredSession | null {
-  try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as StoredSession;
-  } catch {
-    return null;
-  }
-}
-
-export function saveSession(session: StoredSession | null): void {
-  if (!session) {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    return;
-  }
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowLeftRight,
   Baby,
   BarChart3,
   Bell,
@@ -28,7 +27,7 @@ interface NavItem {
 }
 
 export function DashboardLayout() {
-  const { currentUser, logout, switchDemoFamilyUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { db, markNotificationRead, markAllNotificationsRead } = useData();
   const navigate = useNavigate();
 
@@ -97,12 +96,13 @@ export function DashboardLayout() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const unreadCount = userNotifications.filter((n) => !n.isRead).length;
 
-  const isMokoenaDemoAccount =
-    currentUser.id === 'user-parent-thandiwe' || currentUser.id === 'user-parent-sipho';
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch {
+      window.alert('Unable to sign out. Please check the backend connection and try again.');
+    }
   };
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -163,32 +163,6 @@ export function DashboardLayout() {
             </NavLink>
           ))}
         </nav>
-
-        {isMokoenaDemoAccount && (
-          <div className="border-t border-slate-200 bg-slate-50 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Switch account
-            </p>
-            <button
-              type="button"
-              onClick={() =>
-                switchDemoFamilyUser(
-                  currentUser.id === 'user-parent-thandiwe'
-                    ? 'user-parent-sipho'
-                    : 'user-parent-thandiwe'
-                )
-              }
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-[#0F2942] hover:bg-slate-100"
-            >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              <span>
-                {currentUser.id === 'user-parent-thandiwe'
-                  ? 'Sipho · Paying'
-                  : 'Thandiwe · Receiving'}
-              </span>
-            </button>
-          </div>
-        )}
 
         <div className="border-t border-slate-200 p-3">
           <button
@@ -292,6 +266,9 @@ export function DashboardLayout() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto">
+          <p className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Dashboard records are fictional demo data stored in this browser. Do not enter real personal information.
+          </p>
           <Outlet />
         </main>
       </div>
