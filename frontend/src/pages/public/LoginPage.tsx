@@ -53,6 +53,11 @@ export function LoginPage() {
             onSubmit={handleSubmit}
             className="mt-6 space-y-4 border border-slate-200 bg-white p-6 rounded-sm"
           >
+            {registrationState?.registrationSuccess && (
+              <div role="status" className="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+                Account created successfully. Please sign in.
+              </div>
+            )}
             {error && (
               <div className="flex items-start gap-2 rounded-sm border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-800">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
