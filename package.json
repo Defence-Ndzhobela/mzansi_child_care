@@ -1,13 +1,8 @@
 {
+  "private": true,
   "scripts": {
-    "start": "node backend/server.js",
-    "test": "node --test backend/server.test.js"
-  },
-  "dependencies": {
-    "@neondatabase/serverless": "^1.2.1",
-    "bcryptjs": "^3.0.2",
-    "dotenv": "^18.0.10",
-    "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "start": "npm --prefix backend start",
+    "test": "npm --prefix backend test"
   }
 }
