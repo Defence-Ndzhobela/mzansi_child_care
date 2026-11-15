@@ -15,13 +15,41 @@ const user = {
 };
 let server;
 let base;
+const registered = new Map();
+let failInsert = false;
 
 before(async () => {
-  const sql = async (strings, value) => {
+  const sql = async (strings, ...values) => {
     const query = strings.join("?");
     if (query.includes("SELECT version()")) return [{ version: "PostgreSQL" }];
-    if (query.includes("WHERE lower(email)")) return value === user.email ? [user] : [];
-    if (query.includes("WHERE id")) return value === user.id ? [user] : [];
+    if (query.includes("WHERE lower(email)")) {
+      const found = values[0] === user.email ? user : registered.get(values[0]);
+      return found ? [found] : [];
+    }
+    if (query.includes("INSERT INTO users")) {
+      if (failInsert) throw new Error("database unavailable");
+      const [fullName, email, phone, passwordHash] = values;
+      if (registered.has(email)) {
+        const error = new Error("duplicate");
+        error.code = "23505";
+        error.constraint = "users_email_key";
+        throw error;
+      }
+      const created = {
+        id: "22222222-2222-4222-8222-222222222201",
+        full_name: fullName,
+        email,
+        phone,
+        password_hash: passwordHash,
+        role: "PARENT_CAREGIVER",
+        account_status: "ACTIVE",
+      };
+      registered.set(email, created);
+      return [created];
+    }
+    if (query.includes("WHERE id")) {
+      return [user, ...registered.values()].filter((item) => item.id === values[0]);
+    }
     throw new Error("Unexpected query");
   };
   server = createApp(sql, secret).listen(0, "127.0.0.1");
