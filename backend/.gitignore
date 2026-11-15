@@ -1,0 +1,11 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# User uploads and local data must never be committed
+uploads/
+*.pem
+*.key
+
+node_modules/
