@@ -35,23 +35,73 @@ evidence, when those features are built.
 1. `cd backend && npm install`
 2. Copy `.env.example` to `.env`; set `DATABASE_URL` (Neon connection string) and
    `JWT_SECRET` (random, at least 32 bytes). Keep both secret. `.env` is Git-ignored
-   and existing environment variables take precedence.
+   and existing environment variables take precedence. The server refuses to
+   start if a required variable is missing or invalid.
 3. `npm run db:migrate` to apply pending migrations.
-4. `npm start` (API at `http://127.0.0.1:3001`), and `npm run dev` in `frontend`.
-5. `npm test` for the backend tests.
+4. `npm start` (API at `BACKEND_URL`, port 5000 by default).
+5. In `frontend`: copy `.env.example` to `.env.local` (sets `VITE_API_URL`), then `npm install` and `npm run dev`.
+6. `npm test` for the backend tests.
 
 The same `start`, `db:migrate` and `test` scripts also work from the repository root.
 
+## Configuration
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `NODE_ENV` | backend | `development` (default), `production` or `test`. Production requires https URLs and Secure cookies. |
+| `PORT` | backend | Listen port. Render injects it; the fallback is 5000. |
+| `HOST` | backend | Optional bind address. Leave unset in production. |
+| `FRONTEND_URL` | backend | Origin of the frontend. Required; always allowed by CORS. |
+| `BACKEND_URL` | backend | Public origin of this API. Required; always allowed by CORS. |
+| `CORS_ORIGINS` | backend | Extra allowed browser origins, comma separated, exact match. `*` is rejected. |
+| `COOKIE_SAME_SITE` | backend | `strict` (default), `lax` or `none`. |
+| `DATABASE_URL`, `JWT_SECRET` | backend | Secrets. Never expose to the frontend. |
+| `VITE_API_URL` | frontend | API base including `/api`. Read only in `frontend/src/config/api.ts`. |
+| `VITE_BACKEND_URL` | frontend | Backend origin without `/api`, for links to backend-served files. |
+
+Every frontend request goes through `apiFetch` (`frontend/src/services/apiClient.ts`),
+which prefixes `VITE_API_URL` and sends cookies (`credentials: 'include'`).
+
+## Deploying: Vercel (frontend) and Render (backend)
+
+Set these in the dashboards; no source edits are needed.
+
+- **Vercel**: `VITE_API_URL=https://<backend>.onrender.com/api`,
+  `VITE_BACKEND_URL=https://<backend>.onrender.com`.
+- **Render**: `NODE_ENV=production`, `FRONTEND_URL=https://<project>.vercel.app`,
+  `BACKEND_URL=https://<backend>.onrender.com`, `CORS_ORIGINS=https://<project>.vercel.app`
+  (add any extra origins, such as preview domains, comma separated), `DATABASE_URL`,
+  `JWT_SECRET`, and `COOKIE_SAME_SITE=none`. Do not set `PORT`: Render provides it.
+  Build command `npm install`, start command `npm start`, root directory `backend`.
+
+Sessions use an HttpOnly cookie. `vercel.app` and `onrender.com` are different
+sites, so the cookie must be `SameSite=None; Secure` (`COOKIE_SAME_SITE=none`), and
+browsers that block third-party cookies (Safari, and Chrome in some modes) will not
+keep the session. For reliable sessions, serve both apps under one registrable
+domain (for example `app.example.com` and `api.example.com`) and keep
+`COOKIE_SAME_SITE=strict`.
+
+CORS is an exact-match allow-list. A request whose `Origin` header is not listed is
+rejected with 403 for every method, which also blocks cross-site form or script
+requests that would carry the session cookie. Requests with no `Origin` header
+(curl, health checks, same-origin navigation) are not affected but still need
+authentication.
+
+Render's filesystem is ephemeral. There is no upload endpoint yet; when evidence
+uploads are added, store files in external object storage (the schema already
+keeps only a `file_url`) and build public links from `BACKEND_URL` or the
+storage provider's URL, never from a hard-coded host.
+
 # Authentication
 
-Vite proxies `/api` to the backend at `127.0.0.1:3001`. For production, serve
-the frontend and API on the same HTTPS origin and set `NODE_ENV=production` so
-session cookies are marked Secure. Do not expose the database connection string
-or JWT secret to the frontend.
+The frontend calls the API at `VITE_API_URL`; CORS (above) permits the configured
+origins. Do not expose the database connection string or JWT secret to the
+frontend.
 
 `POST /api/auth/login` accepts JSON email and password, and returns a JWT and
-the user's ID, full name, email and role. The browser uses the HttpOnly,
-SameSite=Strict session cookie rather than storing the JWT in localStorage.
+the user's ID, full name, email and role. The browser uses the HttpOnly session
+cookie (SameSite=Strict by default; see `COOKIE_SAME_SITE`) rather than storing
+the JWT in localStorage.
 `GET /api/auth/me` checks the session; `/api/parent/me` and
 `/api/social-worker/me` additionally enforce their respective roles.
 `POST /api/auth/logout` clears the cookie. Tokens expire after eight hours.
