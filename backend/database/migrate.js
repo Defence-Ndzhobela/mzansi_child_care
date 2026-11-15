@@ -19,7 +19,7 @@ function readStatements(version) {
 }
 
 async function main() {
-  const { databaseUrl } = loadEnv({ requireJwtSecret: false });
+  const { databaseUrl } = loadEnv({ databaseOnly: true });
   const sql = createDatabase(databaseUrl);
 
   await sql.query(`
