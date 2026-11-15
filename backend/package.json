@@ -1,0 +1,22 @@
+{
+  "name": "mzansi-childcare-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mzansi ChildCare API (Express + Neon PostgreSQL)",
+  "main": "server.js",
+  "engines": {
+    "node": ">=19"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "db:migrate": "node database/migrate.js",
+    "test": "node --test tests/auth.test.js tests/child.test.js tests/family.test.js tests/encryptIdNumber.test.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.1",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^18.0.10",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
