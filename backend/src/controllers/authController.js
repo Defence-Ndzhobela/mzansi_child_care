@@ -1,10 +1,10 @@
 const { sendNoContent, sendSuccess } = require("../utils/apiResponse");
 const { SESSION_COOKIE_NAME, TOKEN_AGE_SECONDS } = require("../services/authService");
 
-function createAuthController({ authService, secureCookies = false }) {
+function createAuthController({ authService, secureCookies = false, cookieSameSite = "strict" }) {
   const cookieOptions = {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: cookieSameSite,
     secure: secureCookies,
     path: "/",
   };
