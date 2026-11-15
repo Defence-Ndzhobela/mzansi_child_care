@@ -41,6 +41,54 @@ function createApp(sql, jwtSecret, secureCookies = false) {
     res.type("text/plain").send(result[0].version);
   }));
 
+  app.post("/api/auth/register", asyncRoute(async (req, res) => {
+    const { fullName, email, phone, password, confirmPassword, accountType } = req.body || {};
+    if (typeof fullName !== "string" || !fullName.trim() || fullName.trim().length > 150 ||
+        /[\u0000-\u001f\u007f]/.test(fullName)) {
+      return res.status(400).json({ error: "Enter a valid full name (up to 150 characters)." });
+    }
+    if (typeof email !== "string" || email.trim().length > 255 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ error: "Enter a valid email address." });
+    }
+    if (typeof phone !== "string" || phone.trim().length > 30 ||
+        !/^\+?[0-9 ()-]{7,30}$/.test(phone.trim()) ||
+        (phone.match(/[0-9]/g) || []).length < 7) {
+      return res.status(400).json({ error: "Enter a valid phone number." });
+    }
+    if (typeof password !== "string" || password.length < 10 ||
+        Buffer.byteLength(password) > 72 ||
+        !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: "Password must be at least 10 characters and include uppercase, lowercase and a number (maximum 72 bytes)." });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: "Passwords do not match." });
+    }
+    if (!["PARENT_CAREGIVER", "PAYING_PARENT"].includes(accountType)) {
+      return res.status(400).json({ error: "Select a valid account type." });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await sql`SELECT id FROM users WHERE lower(email) = ${normalizedEmail} LIMIT 1`;
+    if (existing.length) {
+      return res.status(409).json({ error: "An account with this email address already exists." });
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    try {
+      const users = await sql`
+        INSERT INTO users (full_name, email, phone, password_hash, role, account_status)
+        VALUES (${fullName.trim()}, ${normalizedEmail}, ${phone.trim()}, ${passwordHash}, 'PARENT_CAREGIVER', 'ACTIVE')
+        RETURNING id, full_name, email, role
+      `;
+      return res.status(201).json({ user: publicUser(users[0]) });
+    } catch (error) {
+      if (error.code === "23505" && error.constraint === "users_email_key") {
+        return res.status(409).json({ error: "An account with this email address already exists." });
+      }
+      throw error;
+    }
+  }));
+
   app.post("/api/auth/login", asyncRoute(async (req, res) => {
     const { email, password } = req.body || {};
     if (typeof email !== "string" || typeof password !== "string" ||
