@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User, UserRole } from '../types';
+import { apiFetch } from '../services/apiClient';
 
 interface AuthUser {
   id: string;
@@ -38,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const version = authVersion.current;
     async function restoreSession() {
       try {
-        const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        const response = await apiFetch('/auth/me');
         if (response.status === 401) return;
         if (!response.ok) throw new Error('Session check failed');
         const body: unknown = await response.json();
@@ -71,9 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login: AuthContextValue['login'] = async (email, password) => {
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await apiFetch('/auth/login', {
         method: 'POST',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
@@ -96,9 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    const response = await fetch('/api/auth/logout', {
+    const response = await apiFetch('/auth/logout', {
       method: 'POST',
-      credentials: 'same-origin',
     });
     if (!response.ok) throw new Error('Unable to sign out.');
     authVersion.current += 1;

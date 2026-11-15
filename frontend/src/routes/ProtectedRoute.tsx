@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
+import { apiFetch } from '../services/apiClient';
 
 interface ProtectedRouteProps {
   allowedRole: UserRole;
@@ -21,8 +22,8 @@ export function ProtectedRoute({ allowedRole, children }: ProtectedRouteProps) {
     setAccess(null);
     if (!currentUser || currentUser.role !== allowedRole) return () => { active = false; };
     const userId = currentUser.id;
-    const path = allowedRole === 'SOCIAL_WORKER' ? '/api/social-worker/me' : '/api/parent/me';
-    fetch(path, { credentials: 'same-origin' })
+    const path = allowedRole === 'SOCIAL_WORKER' ? '/social-worker/me' : '/parent/me';
+    apiFetch(path)
       .then((response) => {
         if (active) setAccess({
           userId,

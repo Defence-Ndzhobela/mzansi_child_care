@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
+import { apiFetch } from '../../services/apiClient';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -27,9 +28,8 @@ export function RegisterPage() {
     }
     setSubmitting(true);
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await apiFetch('/auth/register', {
         method: 'POST',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullName, email, phone, password, confirmPassword, accountType }),
       });
