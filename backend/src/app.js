@@ -6,6 +6,7 @@ const { createChildController } = require("./controllers/childController");
 const { createFamilyController } = require("./controllers/familyController");
 const { createSocialWorkerController } = require("./controllers/socialWorkerController");
 const { createAuthenticate } = require("./middleware/authMiddleware");
+const { createCorsMiddleware } = require("./middleware/corsMiddleware");
 const { errorMiddleware } = require("./middleware/errorMiddleware");
 const { createChildIdRateLimit } = require("./middleware/rateLimitMiddleware");
 const { createAuthRoutes } = require("./routes/authRoutes");
@@ -17,8 +18,11 @@ const { createChildService } = require("./services/childService");
 const { createFamilyService } = require("./services/familyService");
 const asyncHandler = require("./utils/asyncHandler");
 
-// `sql` is injected so tests can supply a fake database.
-function createApp({ sql, jwtSecret, secureCookies = false }) {
+// `sql` is injected so tests can supply a fake database. `allowedOrigins` are the exact
+// browser origins permitted to call the API; with none, any request carrying an Origin is rejected.
+function createApp({
+  sql, jwtSecret, secureCookies = false, cookieSameSite = "strict", allowedOrigins = [],
+}) {
   assertValidJwtSecret(jwtSecret);
 
   const authService = createAuthService({ sql, jwtSecret });
@@ -30,6 +34,7 @@ function createApp({ sql, jwtSecret, secureCookies = false }) {
 
   const app = express();
   app.disable("x-powered-by");
+  app.use(createCorsMiddleware(allowedOrigins));
   app.use(express.json({ limit: "8kb" }));
   app.use("/api", (_req, res, next) => {
     res.set("Cache-Control", "no-store");
@@ -41,7 +46,7 @@ function createApp({ sql, jwtSecret, secureCookies = false }) {
   }));
 
   app.use("/api", createAuthRoutes({
-    authController: createAuthController({ authService, secureCookies }),
+    authController: createAuthController({ authService, secureCookies, cookieSameSite }),
     authenticate,
   }));
   app.use("/api/parent/children", createChildRoutes({

@@ -15,11 +15,16 @@ function start() {
   const app = createApp({
     sql: createDatabase(env.databaseUrl),
     jwtSecret: env.jwtSecret,
-    secureCookies: env.isProduction,
+    secureCookies: env.secureCookies,
+    cookieSameSite: env.cookieSameSite,
+    allowedOrigins: env.allowedOrigins,
   });
-  const server = app.listen(env.port, env.host, () => {
-    console.log(`Server running at http://localhost:${env.port}`);
-  });
+  const listening = () => {
+    console.log(`Server running on port ${env.port} (${env.nodeEnv}); public URL ${env.backendUrl}`);
+  };
+  const server = env.host
+    ? app.listen(env.port, env.host, listening)
+    : app.listen(env.port, listening);
 
   let shuttingDown = false;
   function shutdown() {
