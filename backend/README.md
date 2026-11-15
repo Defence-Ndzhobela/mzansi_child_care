@@ -20,6 +20,15 @@ SameSite=Strict session cookie rather than storing the JWT in localStorage.
 `POST /api/auth/logout` clears the cookie. Tokens expire after eight hours.
 Logout does not revoke a previously copied bearer token before it expires.
 
+`POST /api/auth/register` accepts `fullName`, `email`, `phone`, `password`,
+`confirmPassword` and `accountType` (`PARENT_CAREGIVER` or `PAYING_PARENT`).
+Both choices create an active `PARENT_CAREGIVER` user; the schema does not store
+the choice separately. Email is normalized to lowercase, passwords must contain
+at least 10 characters including uppercase, lowercase and a number, and must
+not exceed bcrypt's 72-byte limit. Successful registration returns the new
+user's ID, name, email and role, without signing in automatically.
+Public registration cannot create social workers.
+
 The five fictional accounts listed in `database/schema.sql` use `Demo@12345`.
 These are public demo credentials and must not be used in production. The schema
 is intended for a new database; do not rerun it against an existing one.
