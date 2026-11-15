@@ -37,9 +37,22 @@ export interface FamilyRelationship {
   id: string;
   childId: string;
   userId: string;
+  fullName?: string;
+  email?: string;
   relationshipType: RelationshipType;
   isPrimaryCaregiver: boolean;
   createdAt: string;
+}
+
+export interface ChildLinkRequest {
+  id: string;
+  childId: string;
+  childName: string;
+  requesterId: string;
+  requesterName: string;
+  requesterEmail: string;
+  relationshipType: RelationshipType;
+  requestedAt: string;
 }
 
 export type ArrangementFrequency = 'Monthly' | 'Fortnightly' | 'Weekly';
