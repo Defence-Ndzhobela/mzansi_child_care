@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User, UserRole } from '../types';
-import { useData } from './DataContext';
 
 interface AuthUser {
   id: string;
@@ -29,7 +28,6 @@ function isAuthUser(value: unknown): value is AuthUser {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { db } = useData();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -62,17 +60,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const currentUser = useMemo((): User | null => {
     if (!authUser) return null;
-    const demoUser = db.users.find((user) => user.id === authUser.id);
     return {
       phone: '',
       accountStatus: 'ACTIVE',
       createdAt: '',
       updatedAt: '',
-      ...demoUser,
       ...authUser,
-      fullName: demoUser?.fullName ?? authUser.fullName,
     };
-  }, [authUser, db.users]);
+  }, [authUser]);
 
   const login: AuthContextValue['login'] = async (email, password) => {
     try {

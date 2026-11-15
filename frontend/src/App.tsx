@@ -27,9 +27,9 @@ import { ProtectedRoute } from './routes/ProtectedRoute';
 
 export default function App() {
   return (
-    <DataProvider>
+    <BrowserRouter>
       <AuthProvider>
-        <BrowserRouter>
+        <DataProvider>
           <Routes>
             <Route element={<PublicLayout />}>
               <Route path="/" element={<LandingPage />} />
@@ -78,8 +78,8 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </BrowserRouter>
+        </DataProvider>
       </AuthProvider>
-    </DataProvider>
+    </BrowserRouter>
   );
 }

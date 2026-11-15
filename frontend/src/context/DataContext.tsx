@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   AppDatabaseState,
   ArrangementFrequency,
   ArrangementStatus,
   Child,
+  ChildLinkRequest,
+  FamilyRelationship,
   MaintenanceArrangement,
   Payment,
   PaymentConcern,
@@ -14,11 +16,17 @@ import {
   RelationshipType,
   ReviewStatus,
 } from '../types';
-import { loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
+import { DEMO_USER_DB_IDS, loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
 import { generateId } from '../utils/format';
+import { useAuth } from './AuthContext';
 
 interface DataContextValue {
   db: AppDatabaseState;
+  childrenLoading: boolean;
+  childrenError: string | null;
+  pendingChildLinkRequests: ChildLinkRequest[];
+  refreshFamilyData: () => Promise<void>;
+  refreshChildLinkRequests: () => Promise<void>;
   updateUserProfile: (
     userId: string,
     updates: { fullName: string; phone: string; region?: string }
@@ -27,16 +35,16 @@ interface DataContextValue {
     firstName: string;
     lastName: string;
     dateOfBirth: string;
-    createdBy: string;
+    southAfricanId: string;
     relationshipType: RelationshipType;
     isPrimaryCaregiver: boolean;
-    coParentUserId?: string;
-    coParentRelationship?: RelationshipType;
-  }) => Child;
+  }) => Promise<void>;
   updateChild: (
     childId: string,
     updates: { firstName: string; lastName: string; dateOfBirth: string }
-  ) => void;
+  ) => Promise<void>;
+  requestChildLink: (southAfricanId: string, relationshipType: RelationshipType) => Promise<void>;
+  respondToChildLinkRequest: (requestId: string, decision: 'APPROVED' | 'REJECTED') => Promise<void>;
   addArrangement: (input: {
     childId: string;
     payingUserId: string;
@@ -112,8 +120,121 @@ interface DataContextValue {
 
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
+interface ApiChild extends Child {
+  relationships: FamilyRelationship[];
+}
+
+async function responseError(response: Response): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+      return body.error;
+    }
+  } catch {
+    return 'The server returned an invalid response.';
+  }
+  return 'The request could not be completed.';
+}
+
+function relationshipPayload(relationshipType: RelationshipType): string {
+  return relationshipType.replace(/[\s-]+/g, '_').toUpperCase();
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser, isLoading: authLoading } = useAuth();
   const [db, setDb] = useState<AppDatabaseState>(() => loadDatabase());
+  const [childrenLoading, setChildrenLoading] = useState(true);
+  const [childrenError, setChildrenError] = useState<string | null>(null);
+  const [pendingChildLinkRequests, setPendingChildLinkRequests] = useState<ChildLinkRequest[]>([]);
+
+  const refreshChildLinkRequests = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'PARENT_CAREGIVER') {
+      setPendingChildLinkRequests([]);
+      return;
+    }
+    const response = await fetch('/api/parent/child-link-requests', {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    const body = await response.json() as { requests?: ChildLinkRequest[] };
+    if (!Array.isArray(body.requests)) throw new Error('Invalid child-link request response.');
+    setPendingChildLinkRequests(body.requests);
+  }, [currentUser]);
+
+  const refreshFamilyData = useCallback(async () => {
+    if (!currentUser) {
+      setDb((previous) => ({ ...previous, children: [], familyRelationships: [] }));
+      setPendingChildLinkRequests([]);
+      setChildrenLoading(false);
+      setChildrenError(null);
+      return;
+    }
+
+    setChildrenLoading(true);
+    setChildrenError(null);
+    try {
+      const endpoint = currentUser.role === 'SOCIAL_WORKER'
+        ? '/api/social-worker/children'
+        : '/api/parent/children';
+      const response = await fetch(endpoint, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(await responseError(response));
+      const body = await response.json() as { children?: ApiChild[] };
+      if (!Array.isArray(body.children)) throw new Error('Invalid child data response.');
+      const familyChildren = body.children.map((item) => ({
+        id: item.id,
+        firstName: item.firstName,
+        lastName: item.lastName,
+        dateOfBirth: item.dateOfBirth,
+        createdBy: item.createdBy,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }));
+      const relationships = body.children.flatMap((item) => item.relationships ?? []);
+
+      setDb((previous) => {
+        const users = new Map(previous.users
+          .filter((user) => DEMO_USER_DB_IDS.has(user.id))
+          .map((user) => [user.id, user]));
+        users.set(currentUser.id, { ...users.get(currentUser.id), ...currentUser });
+        relationships.forEach((relationship) => {
+          if (!relationship.userId || !relationship.fullName || !relationship.email) return;
+          users.set(relationship.userId, {
+            ...users.get(relationship.userId),
+            id: relationship.userId,
+            fullName: relationship.fullName,
+            email: relationship.email,
+            phone: users.get(relationship.userId)?.phone ?? '',
+            role: 'PARENT_CAREGIVER',
+            accountStatus: 'ACTIVE',
+            createdAt: users.get(relationship.userId)?.createdAt ?? '',
+            updatedAt: users.get(relationship.userId)?.updatedAt ?? '',
+          });
+        });
+        return {
+          ...previous,
+          users: [...users.values()],
+          children: familyChildren,
+          familyRelationships: relationships,
+        };
+      });
+
+      if (currentUser.role === 'PARENT_CAREGIVER') {
+        await refreshChildLinkRequests();
+      } else {
+        setPendingChildLinkRequests([]);
+      }
+    } catch (error) {
+      setChildrenError(error instanceof Error ? error.message : 'Unable to load child profiles.');
+      throw error;
+    } finally {
+      setChildrenLoading(false);
+    }
+  }, [currentUser, refreshChildLinkRequests]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    void refreshFamilyData().catch(() => {});
+  }, [authLoading, refreshFamilyData]);
 
   const commit = (updater: (prev: AppDatabaseState) => AppDatabaseState) => {
     setDb((prev) => {
@@ -135,64 +256,57 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const addChild: DataContextValue['addChild'] = (input) => {
-    const now = new Date().toISOString();
-    const newChild: Child = {
-      id: generateId('child'),
-      firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      dateOfBirth: input.dateOfBirth,
-      createdBy: input.createdBy,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const newRelationships = [
-      {
-        id: generateId('rel'),
-        childId: newChild.id,
-        userId: input.createdBy,
-        relationshipType: input.relationshipType,
-        isPrimaryCaregiver: input.isPrimaryCaregiver,
-        createdAt: now,
-      },
-    ];
-
-    if (input.coParentUserId && input.coParentUserId !== input.createdBy) {
-      newRelationships.push({
-        id: generateId('rel'),
-        childId: newChild.id,
-        userId: input.coParentUserId,
-        relationshipType: input.coParentRelationship ?? 'Father',
-        isPrimaryCaregiver: !input.isPrimaryCaregiver,
-        createdAt: now,
-      });
+  const addChild: DataContextValue['addChild'] = async (input) => {
+    const response = await fetch('/api/parent/children', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...input,
+        relationshipType: relationshipPayload(input.relationshipType),
+      }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    const body = await response.json() as { message?: string };
+    if (response.status !== 201 || typeof body.message !== 'string') {
+      throw new Error('The server returned an invalid child profile response.');
     }
-
-    commit((prev) => ({
-      ...prev,
-      children: [...prev.children, newChild],
-      familyRelationships: [...prev.familyRelationships, ...newRelationships],
-    }));
-    return newChild;
+    await refreshFamilyData();
   };
 
-  const updateChild: DataContextValue['updateChild'] = (childId, updates) => {
-    const now = new Date().toISOString();
-    commit((prev) => ({
-      ...prev,
-      children: prev.children.map((c) =>
-        c.id === childId
-          ? {
-              ...c,
-              firstName: updates.firstName.trim(),
-              lastName: updates.lastName.trim(),
-              dateOfBirth: updates.dateOfBirth,
-              updatedAt: now,
-            }
-          : c
-      ),
-    }));
+  const updateChild: DataContextValue['updateChild'] = async (childId, updates) => {
+    const response = await fetch(`/api/parent/children/${encodeURIComponent(childId)}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    await refreshFamilyData();
+  };
+
+  const requestChildLink: DataContextValue['requestChildLink'] = async (southAfricanId, relationshipType) => {
+    const response = await fetch('/api/parent/children/link-requests', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        southAfricanId,
+        relationshipType: relationshipPayload(relationshipType),
+      }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+  };
+
+  const respondToChildLinkRequest: DataContextValue['respondToChildLinkRequest'] = async (requestId, decision) => {
+    const response = await fetch(`/api/parent/child-link-requests/${encodeURIComponent(requestId)}/respond`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    await refreshFamilyData();
   };
 
   const addArrangement: DataContextValue['addArrangement'] = (input) => {
@@ -214,39 +328,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
 
     commit((prev) => {
-      // Ensure both parties have a relationship link to the child so both dashboards can see it
-      const existingPayingRel = prev.familyRelationships.some(
-        (r) => r.childId === input.childId && r.userId === input.payingUserId
-      );
-      const existingRecRel = prev.familyRelationships.some(
-        (r) => r.childId === input.childId && r.userId === input.receivingUserId
-      );
-      const extraRels = [...prev.familyRelationships];
-      if (!existingPayingRel) {
-        extraRels.push({
-          id: generateId('rel'),
-          childId: input.childId,
-          userId: input.payingUserId,
-          relationshipType: 'Paying Parent',
-          isPrimaryCaregiver: false,
-          createdAt: now,
-        });
-      }
-      if (!existingRecRel) {
-        extraRels.push({
-          id: generateId('rel'),
-          childId: input.childId,
-          userId: input.receivingUserId,
-          relationshipType: 'Primary Caregiver',
-          isPrimaryCaregiver: true,
-          createdAt: now,
-        });
-      }
-
       return {
         ...prev,
         arrangements: [arr, ...prev.arrangements],
-        familyRelationships: extraRels,
       };
     });
 
@@ -576,15 +660,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const resetDemoData = () => {
     const fresh = resetDatabaseStorage();
     setDb(fresh);
+    void refreshFamilyData().catch(() => {});
   };
 
   return (
     <DataContext.Provider
       value={{
         db,
+        childrenLoading,
+        childrenError,
+        pendingChildLinkRequests,
+        refreshFamilyData,
+        refreshChildLinkRequests,
         updateUserProfile,
         addChild,
         updateChild,
+        requestChildLink,
+        respondToChildLinkRequest,
         addArrangement,
         updateArrangement,
         recordPayment,
