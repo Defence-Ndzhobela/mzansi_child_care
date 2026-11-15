@@ -102,6 +102,20 @@ test("registration creates a bcrypt-protected parent and supports login", async 
   assert.equal((await register(registration)).status, 409);
 });
 
+test("registration validates input and cannot create social workers", async () => {
+  for (const invalid of [
+    { fullName: "  " },
+    { email: "not-an-email" },
+    { phone: "invalid" },
+    { password: "short", confirmPassword: "short" },
+    { password: "A1" + "é".repeat(36), confirmPassword: "A1" + "é".repeat(36) },
+    { confirmPassword: "Different123" },
+    { accountType: "SOCIAL_WORKER" },
+  ]) {
+    assert.equal((await register({ ...registration, ...invalid })).status, 400);
+  }
+});
+
 test("database check returns the PostgreSQL version", async () => {
   const response = await fetch(base);
   assert.equal(response.status, 200);
