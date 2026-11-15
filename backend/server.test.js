@@ -116,6 +116,18 @@ test("registration validates input and cannot create social workers", async () =
   }
 });
 
+test("registration reports database failures and concurrent duplicate inserts", async () => {
+  failInsert = true;
+  try {
+    assert.equal((await register({ ...registration, email: "failure@example.test" })).status, 500);
+  } finally {
+    failInsert = false;
+  }
+  const input = { ...registration, email: "race@example.test" };
+  const responses = await Promise.all([register(input), register(input)]);
+  assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+});
+
 test("database check returns the PostgreSQL version", async () => {
   const response = await fetch(base);
   assert.equal(response.status, 200);
