@@ -67,6 +67,41 @@ async function login(email, password) {
   });
 }
 
+const registration = {
+  fullName: "  Fictional Parent  ",
+  email: "  New@Example.test ",
+  phone: "+27 82 555 0100",
+  password: "StrongPass123",
+  confirmPassword: "StrongPass123",
+  accountType: "PAYING_PARENT",
+};
+
+async function register(input) {
+  return fetch(`${base}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+test("registration creates a bcrypt-protected parent and supports login", async () => {
+  const response = await register({ ...registration, role: "SOCIAL_WORKER" });
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.deepEqual(body.user, {
+    id: "22222222-2222-4222-8222-222222222201",
+    fullName: "Fictional Parent",
+    email: "new@example.test",
+    role: "PARENT_CAREGIVER",
+  });
+  const stored = registered.get("new@example.test");
+  assert.notEqual(stored.password_hash, registration.password);
+  assert.equal(await bcrypt.compare(registration.password, stored.password_hash), true);
+  assert.equal(JSON.stringify(body).includes(stored.password_hash), false);
+  assert.equal((await login("new@example.test", registration.password)).status, 200);
+  assert.equal((await register(registration)).status, 409);
+});
+
 test("database check returns the PostgreSQL version", async () => {
   const response = await fetch(base);
   assert.equal(response.status, 200);
