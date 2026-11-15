@@ -35,4 +35,4 @@ is intended for a new database; do not rerun it against an existing one.
 
 Run `npm test` for backend tests. Authentication uses Neon, but dashboard data
 and profile edits remain fictional browser-local demo data, not protected Neon
-records. Registration is disabled until a backend registration flow exists.
+records.
