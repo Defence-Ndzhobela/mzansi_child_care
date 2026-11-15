@@ -17,6 +17,7 @@ import {
   ReviewStatus,
 } from '../types';
 import { DEMO_USER_DB_IDS, loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
+import { apiFetch } from '../services/apiClient';
 import { generateId } from '../utils/format';
 import { useAuth } from './AuthContext';
 
@@ -152,9 +153,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setPendingChildLinkRequests([]);
       return;
     }
-    const response = await fetch('/api/parent/child-link-requests', {
-      credentials: 'same-origin',
-    });
+    const response = await apiFetch('/parent/child-link-requests');
     if (!response.ok) throw new Error(await responseError(response));
     const body = await response.json() as { requests?: ChildLinkRequest[] };
     if (!Array.isArray(body.requests)) throw new Error('Invalid child-link request response.');
@@ -174,9 +173,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setChildrenError(null);
     try {
       const endpoint = currentUser.role === 'SOCIAL_WORKER'
-        ? '/api/social-worker/children'
-        : '/api/parent/children';
-      const response = await fetch(endpoint, { credentials: 'same-origin' });
+        ? '/social-worker/children'
+        : '/parent/children';
+      const response = await apiFetch(endpoint);
       if (!response.ok) throw new Error(await responseError(response));
       const body = await response.json() as { children?: ApiChild[] };
       if (!Array.isArray(body.children)) throw new Error('Invalid child data response.');
@@ -257,9 +256,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addChild: DataContextValue['addChild'] = async (input) => {
-    const response = await fetch('/api/parent/children', {
+    const response = await apiFetch('/parent/children', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...input,
@@ -275,9 +273,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateChild: DataContextValue['updateChild'] = async (childId, updates) => {
-    const response = await fetch(`/api/parent/children/${encodeURIComponent(childId)}`, {
+    const response = await apiFetch(`/parent/children/${encodeURIComponent(childId)}`, {
       method: 'PATCH',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
@@ -286,9 +283,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const requestChildLink: DataContextValue['requestChildLink'] = async (southAfricanId, relationshipType) => {
-    const response = await fetch('/api/parent/children/link-requests', {
+    const response = await apiFetch('/parent/children/link-requests', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         southAfricanId,
@@ -299,9 +295,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const respondToChildLinkRequest: DataContextValue['respondToChildLinkRequest'] = async (requestId, decision) => {
-    const response = await fetch(`/api/parent/child-link-requests/${encodeURIComponent(requestId)}/respond`, {
+    const response = await apiFetch(`/parent/child-link-requests/${encodeURIComponent(requestId)}/respond`, {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision }),
     });
