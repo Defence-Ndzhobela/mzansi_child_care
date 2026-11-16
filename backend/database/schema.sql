@@ -17,7 +17,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ----------------------------------------------------------------------------
 -- 1. USERS
 -- Stores parents, caregivers, and authorised social workers.
--- Role is strictly limited to PARENT_CAREGIVER or SOCIAL_WORKER.
+-- Role is limited to PARENT_CAREGIVER, SOCIAL_WORKER or ADMIN. Public registration can only
+-- ever create PARENT_CAREGIVER; ADMIN accounts come from `npm run admin:seed`.
 -- ----------------------------------------------------------------------------
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,8 +26,9 @@ CREATE TABLE users (
     email           VARCHAR(255) NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
     phone           VARCHAR(30),
+    registration_number VARCHAR(50),
     role            VARCHAR(30) NOT NULL
-                    CHECK (role IN ('PARENT_CAREGIVER', 'SOCIAL_WORKER')),
+                    CHECK (role IN ('PARENT_CAREGIVER', 'SOCIAL_WORKER', 'ADMIN')),
     account_status  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                     CHECK (account_status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,6 +37,9 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role_status ON users(role, account_status);
+CREATE UNIQUE INDEX uq_users_registration_number
+    ON users (lower(registration_number)) WHERE registration_number IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- 2. CHILDREN
@@ -277,15 +282,34 @@ CREATE TABLE social_worker_assignments (
     assigned_by         UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     assignment_status   VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                         CHECK (assignment_status IN ('ACTIVE', 'CLOSED', 'TRANSFERRED')),
-    assigned_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    assigned_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at            TIMESTAMPTZ,
+    -- Optional: the arrangement the administrator assigned the worker through. The composite key
+    -- below guarantees it belongs to the same child.
+    maintenance_arrangement_id UUID,
+    ended_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_assignment_arrangement_child
+        FOREIGN KEY (maintenance_arrangement_id, child_id)
+        REFERENCES maintenance_arrangements (id, child_id)
+        ON DELETE SET NULL (maintenance_arrangement_id)
 );
 
 CREATE UNIQUE INDEX uq_active_sw_assignment
     ON social_worker_assignments(social_worker_id, child_id)
     WHERE assignment_status = 'ACTIVE';
 
+-- A child has at most one ACTIVE social worker. Replacing a worker closes the old row as
+-- TRANSFERRED (with ended_at) and opens a new one, so the history is kept.
+CREATE UNIQUE INDEX uq_active_child_assignment
+    ON social_worker_assignments(child_id)
+    WHERE assignment_status = 'ACTIVE';
+
 CREATE INDEX idx_sw_assignments_worker ON social_worker_assignments(social_worker_id);
 CREATE INDEX idx_sw_assignments_child ON social_worker_assignments(child_id);
+CREATE INDEX idx_sw_assignments_assigned_by ON social_worker_assignments(assigned_by);
+CREATE INDEX idx_sw_assignments_arrangement
+    ON social_worker_assignments(maintenance_arrangement_id)
+    WHERE maintenance_arrangement_id IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- 9. PAYMENT_REVIEWS

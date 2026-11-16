@@ -18,7 +18,9 @@ backend/
 │   └── utils/                apiResponse, asyncHandler, encryptIdNumber, payment summary, helpers
 ├── database/
 │   ├── schema.sql            current full schema (for a brand-new database)
-│   ├── migrations/           001_initial_schema.sql, 002_child_linking.sql, 003_payment_persistence.sql
+│   ├── migrations/           001_initial_schema.sql … 005_admin_dashboard.sql
+│   ├── rollbacks/            005_admin_dashboard.rollback.sql (run by hand, never automatic)
+│   ├── seedAdmin.js          creates/updates the administrator (npm run admin:seed)
 │   ├── seeds/demoData.sql    fictional demo users and records (development only)
 │   └── migrate.js            migration runner
 └── tests/                    node:test suites (fake database), plus one Neon integration suite
@@ -176,6 +178,63 @@ unknown fields are rejected with 400).
 
 Social workers can read the arrangements and payments of actively assigned
 children at `GET /api/social-worker/arrangements` and `/payments`.
+
+## Administrator dashboard
+
+Administrators sign in through the normal login page and land on `/admin/dashboard`. There is no
+separate authentication system: an administrator is a row in `users` with `role = 'ADMIN'`.
+
+**One-time setup (run by hand, in this order):**
+
+1. `npm run db:migrate` applies `005_admin_dashboard.sql` (allows the ADMIN role, adds
+   `users.registration_number`, `social_worker_assignments.maintenance_arrangement_id` and
+   `ended_by`). To undo it, review and run `database/rollbacks/005_admin_dashboard.rollback.sql`
+   by hand in the Neon SQL editor.
+2. Create the administrator. The password is read from the environment, hashed with bcrypt and never
+   stored or printed (PowerShell shown):
+
+   ```powershell
+   $env:ADMIN_EMAIL = "admin@example.com"; $env:ADMIN_PASSWORD = "<strong password>"; npm run admin:seed
+   ```
+
+   Running it again updates that administrator instead of creating a second one. An email that already
+   belongs to a parent or social worker is refused, so no account is silently promoted.
+
+Every `/api/admin/*` route sits behind authentication and `requireRole("ADMIN")` (one `router.use`
+in `src/routes/adminRoutes.js`). Roles come from the database on every request; request bodies cannot
+carry a role.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/admin/dashboard/stats` | Live counts for the dashboard cards |
+| `GET/POST /api/admin/social-workers`, `GET/PUT/DELETE /api/admin/social-workers/:id` | Social worker CRUD with `search`, `status`, `page`, `pageSize`. Accounts are created with role `SOCIAL_WORKER` only. Deactivating or removing a worker with active cases is refused. A worker with case history, notes or reviews is deactivated instead of deleted. |
+| `GET/POST /api/admin/social-worker-assignments`, `PUT /…/:id`, `PATCH /…/:id/end` | List (active or history), assign through an arrangement, reassign, end. Each change is one SQL statement, old rows are kept (`CLOSED` / `TRANSFERRED`), and `assigned_by` / `ended_by` record the administrator. |
+| `GET /api/admin/child-supporters`, `…/:id` | Parents who pay in an arrangement or are linked as `PAYING_PARENT` |
+| `GET /api/admin/children`, `…/:id` | Children with parents, arrangements, current worker and assignment history |
+| `GET /api/admin/maintenance-arrangements`, `…/:id` | Read-only arrangements with a payment summary |
+| `GET /api/admin/reports/summary` | Caseloads, arrangements and payments by status, children without a worker |
+
+A child still has one active social worker (`uq_active_child_assignment`), so assigning through an
+arrangement replaces any earlier worker for that child and keeps the old row as history. Assigning
+never changes an arrangement amount or a payment.
+
+## Social worker assignment
+
+A social worker only ever sees children with an ACTIVE row in
+`social_worker_assignments`, so every child needs one. A child has at most one
+active worker (a unique index enforces this) and every parent linked to the
+child sees that same worker.
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `GET /api/parent/social-workers` | Active `SOCIAL_WORKER` accounts (id and name only) for the dropdowns. Parents only. |
+| `POST /api/parent/children` | `socialWorkerId` is required. The child, its creator relationship and its ACTIVE assignment are written by one statement, so a child never exists without a worker. An inactive, unknown or non-worker ID is rejected with 400 and nothing is saved. If the ID number matches an existing child, only a link request is filed and the child keeps its current worker. |
+| `POST /api/parent/arrangements` | `socialWorkerId` is optional. A child that already has a worker keeps it (choosing a different one gets 409). A child with none needs a valid `socialWorkerId`, which is assigned in the same statement as the arrangement. |
+| `PUT /api/parent/children/:childId/social-worker` | Assigns or replaces the worker. Only the person who created the child profile may do this. The old row becomes `TRANSFERRED` with `ended_at` and a new `ACTIVE` row is added in one transaction, so history is preserved. Choosing the current worker is a no-op. |
+
+Child and arrangement responses include `socialWorker` (`{ id, fullName }` or
+`null`). Legacy profiles created before assignments existed stay unassigned
+until their creator assigns a worker or a parent creates an arrangement.
 
 These rules are enforced in the SQL of each statement and again by the
 database: `payments` has a composite foreign key to the arrangement's payer and
