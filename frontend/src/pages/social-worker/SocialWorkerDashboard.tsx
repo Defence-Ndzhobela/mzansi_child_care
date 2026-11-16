@@ -13,7 +13,7 @@ import { ToastBanner } from '../../components/ToastBanner';
 
 export function SocialWorkerDashboard() {
   const { currentUser } = useAuth();
-  const { db } = useData();
+  const { db, childrenLoading, childrenError } = useData();
   const {
     children,
     arrangements,
@@ -198,6 +198,16 @@ export function SocialWorkerDashboard() {
               ))}
             </tbody>
           </table>
+          {childrenError ? (
+            <p role="alert" className="py-6 text-center text-sm text-red-700">{childrenError}</p>
+          ) : childrenLoading ? (
+            <p role="status" className="py-6 text-center text-sm text-slate-600">Loading assigned families…</p>
+          ) : children.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-600">
+              No families are assigned to you yet. A family appears here once a parent registers a
+              child, or creates a maintenance arrangement, and selects you as their social worker.
+            </p>
+          ) : null}
         </div>
       </div>
 
