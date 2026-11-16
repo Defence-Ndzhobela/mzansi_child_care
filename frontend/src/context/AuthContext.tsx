@@ -25,7 +25,7 @@ function isAuthUser(value: unknown): value is AuthUser {
   const user = value as Record<string, unknown>;
   return typeof user.id === 'string' && typeof user.fullName === 'string' &&
     typeof user.email === 'string' &&
-    (user.role === 'PARENT_CAREGIVER' || user.role === 'SOCIAL_WORKER');
+    (user.role === 'PARENT_CAREGIVER' || user.role === 'SOCIAL_WORKER' || user.role === 'ADMIN');
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

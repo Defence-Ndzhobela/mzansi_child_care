@@ -1,4 +1,4 @@
-export type UserRole = 'PARENT_CAREGIVER' | 'SOCIAL_WORKER';
+export type UserRole = 'PARENT_CAREGIVER' | 'SOCIAL_WORKER' | 'ADMIN';
 
 export type AccountStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -15,6 +15,11 @@ export interface User {
   updatedAt: string;
 }
 
+export interface SocialWorkerSummary {
+  id: string;
+  fullName: string;
+}
+
 export interface Child {
   id: string;
   firstName: string;
@@ -23,6 +28,8 @@ export interface Child {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  // The child's ACTIVE social worker from the database; null until one is assigned.
+  socialWorker?: SocialWorkerSummary | null;
 }
 
 export type RelationshipType =
@@ -73,6 +80,7 @@ export interface MaintenanceArrangement {
   endDate?: string;
   status: ArrangementStatus;
   notes?: string;
+  socialWorker?: SocialWorkerSummary | null;
   createdAt: string;
   updatedAt: string;
 }
