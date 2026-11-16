@@ -6,15 +6,10 @@ const crypto = require("node:crypto");
 const { after, before, describe, test } = require("node:test");
 const { createApp } = require("../src/app");
 const { createDatabase } = require("../src/config/database");
-const { loadEnv } = require("../src/config/env");
 const { secret, syntheticId } = require("./helpers/testApp");
+const { deleteTestData, getDatabaseUrl, insertSocialWorker } = require("./helpers/neonHarness");
 
-let databaseUrl = null;
-try {
-  databaseUrl = loadEnv({ databaseOnly: true }).databaseUrl;
-} catch {
-  databaseUrl = null;
-}
+const databaseUrl = getDatabaseUrl();
 
 const PASSWORD = "Maintenance#2026";
 const runId = crypto.randomBytes(4).toString("hex");
@@ -60,11 +55,13 @@ describe("maintenance arrangements and payments on Neon PostgreSQL", { skip: !da
   }
 
   // The first person creates the child profile, the others link to it with the creator's approval.
+  // Every child is registered with a social worker, as the API now requires.
   async function createFamily(creatorKey, childName, links) {
     const idNumber = randomChildId();
     const created = await call(people[creatorKey], "POST", "/api/parent/children", {
       firstName: childName, lastName: "Test", dateOfBirth: "2020-01-01",
       southAfricanId: idNumber, relationshipType: "PRIMARY_CAREGIVER", isPrimaryCaregiver: true,
+      socialWorkerId: state.socialWorkerId,
     });
     assert.equal(created.status, 201, `create child ${childName}`);
     for (const [key, relationshipType] of Object.entries(links)) {
@@ -100,6 +97,9 @@ describe("maintenance arrangements and payments on Neon PostgreSQL", { skip: !da
     await new Promise((resolve) => listener.once("listening", resolve));
     base = `http://127.0.0.1:${listener.address().port}`;
 
+    state.socialWorkerId = await insertSocialWorker(sql, {
+      email: `${emailPrefix}worker@example.test`, fullName: "Maintenance Test Worker",
+    });
     // Sequential on purpose: six simultaneous registrations occasionally hit transient Neon errors.
     for (const [key, name] of [
       ["miluva", "Miluva Test"], ["moses", "Moses Test"], ["grandma", "Grandma Test"],
@@ -120,13 +120,7 @@ describe("maintenance arrangements and payments on Neon PostgreSQL", { skip: !da
 
   after(async () => {
     if (listener) await new Promise((resolve) => listener.close(resolve));
-    if (!sql) return;
-    const owners = "SELECT id FROM users WHERE email LIKE $1";
-    const like = [`${emailPrefix}%`];
-    await sql.query(`DELETE FROM payments WHERE paying_user_id IN (${owners}) OR receiving_user_id IN (${owners})`, like);
-    await sql.query(`DELETE FROM maintenance_arrangements WHERE paying_user_id IN (${owners}) OR receiving_user_id IN (${owners})`, like);
-    await sql.query(`DELETE FROM children WHERE created_by IN (${owners})`, like);
-    await sql.query("DELETE FROM users WHERE email LIKE $1", like);
+    if (sql) await deleteTestData(sql, emailPrefix);
   });
 
   test("an arrangement can only be created between approved family members of the child", async () => {
