@@ -12,10 +12,13 @@ function formatDateOnly(value) {
   return String(value).slice(0, 10);
 }
 
+function parseJson(value) {
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
 function mapChildRow(row) {
-  const relationships = typeof row.relationships === "string"
-    ? JSON.parse(row.relationships)
-    : row.relationships || [];
+  const relationships = parseJson(row.relationships) || [];
+  const socialWorker = parseJson(row.social_worker);
   return {
     id: row.id,
     firstName: row.first_name,
@@ -24,6 +27,8 @@ function mapChildRow(row) {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // The current ACTIVE assignment; the same worker is shown to every parent linked to the child.
+    socialWorker: socialWorker ? { id: socialWorker.id, fullName: socialWorker.fullName } : null,
     relationships: relationships.map((relationship) => ({
       id: relationship.id,
       childId: row.id,
@@ -37,12 +42,17 @@ function mapChildRow(row) {
   };
 }
 
-function createChildService({ sql, jwtSecret }) {
+function createChildService({ sql, jwtSecret, assignmentService }) {
   // Parents see children they created or are linked to; social workers see only active assignments.
   async function listChildrenForUser(userId, role) {
     const rows = await sql`
       SELECT c.id, c.first_name, c.last_name, c.date_of_birth, c.created_by,
              c.created_at, c.updated_at,
+             (SELECT json_build_object('id', sw.id, 'fullName', sw.full_name)
+              FROM social_worker_assignments a
+              JOIN users sw ON sw.id = a.social_worker_id
+              WHERE a.child_id = c.id AND a.assignment_status = 'ACTIVE'
+              LIMIT 1) AS social_worker,
              COALESCE(
                json_agg(json_build_object(
                  'id', fr.id,
@@ -80,15 +90,27 @@ function createChildService({ sql, jwtSecret }) {
     return rows.map(mapChildRow);
   }
 
-  // One statement either creates the child (with its creator relationship) or, when the
-  // ID digest already exists, files a pending link request for the creator to review.
-  // The caller cannot tell which happened, so ID numbers cannot be probed.
+  async function getChildForUser(user, childId) {
+    const children = await listChildrenForUser(user.id, user.role);
+    return children.find((child) => child.id === childId) || null;
+  }
+
+  // One statement either creates the child (with its creator relationship and its ACTIVE social worker
+  // assignment) or, when the ID digest already exists, files a pending link request for the creator to
+  // review. Being one statement, it is atomic: a child is never saved without its assignment.
+  // The caller cannot tell which happened, so ID numbers cannot be probed. When the child already
+  // exists it keeps its current worker, so the family never ends up with two.
   async function createChildOrRequestLink(userId, child) {
+    await assignmentService.assertAvailableSocialWorker(child.socialWorkerId);
     const idHash = childIdLookupHash(child.idNumber, jwtSecret);
     await sql`
         WITH existing_child AS (
           SELECT id, created_by FROM children
           WHERE national_id_lookup_hash = ${idHash}
+        ), valid_worker AS (
+          SELECT id FROM users
+          WHERE id = ${child.socialWorkerId}::uuid
+            AND role = 'SOCIAL_WORKER' AND account_status = 'ACTIVE'
         ), new_child AS (
           INSERT INTO children (
             first_name, last_name, date_of_birth, created_by, national_id_lookup_hash
@@ -97,6 +119,7 @@ function createChildService({ sql, jwtSecret }) {
             ${child.firstName}, ${child.lastName}, ${child.dateOfBirth},
             ${userId}, ${idHash}
           WHERE NOT EXISTS (SELECT 1 FROM existing_child)
+            AND EXISTS (SELECT 1 FROM valid_worker)
           ON CONFLICT (national_id_lookup_hash)
             WHERE national_id_lookup_hash IS NOT NULL
             DO NOTHING
@@ -108,6 +131,11 @@ function createChildService({ sql, jwtSecret }) {
           SELECT id, ${userId}, ${child.relationship}, ${child.isPrimaryCaregiver}
           FROM new_child
           RETURNING child_id
+        ), new_assignment AS (
+          INSERT INTO social_worker_assignments (social_worker_id, child_id, assigned_by)
+          SELECT valid_worker.id, new_child.id, ${userId}
+          FROM new_child, valid_worker
+          RETURNING id
         ), link_request AS (
           INSERT INTO child_link_requests (child_id, requester_user_id, relationship_type)
           SELECT existing_child.id, ${userId}, ${child.relationship}
@@ -138,7 +166,7 @@ function createChildService({ sql, jwtSecret }) {
     return mapChildRow({ ...rows[0], relationships: [] });
   }
 
-  return { createChildOrRequestLink, listChildrenForUser, updateChild };
+  return { createChildOrRequestLink, getChildForUser, listChildrenForUser, updateChild };
 }
 
 module.exports = { createChildService };
