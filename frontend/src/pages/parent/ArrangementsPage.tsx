@@ -3,8 +3,13 @@ import { ClipboardList, Edit3, Plus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useParentScope } from '../../hooks/useFamilyScope';
-import { ArrangementFrequency, ArrangementStatus, MaintenanceArrangement } from '../../types';
-import { formatSADate, formatZAR } from '../../utils/format';
+import {
+  ArrangementFrequency,
+  ArrangementStatus,
+  MaintenanceArrangement,
+  MaintenanceRole,
+} from '../../types';
+import { currentMonthKey, formatSADate, formatZAR } from '../../utils/format';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
 import { ToastBanner } from '../../components/ToastBanner';
@@ -18,30 +23,45 @@ export function ArrangementsPage() {
   const [editing, setEditing] = useState<MaintenanceArrangement | null>(null);
 
   const [childId, setChildId] = useState('');
-  const [roleInArrangement, setRoleInArrangement] = useState<'RECEIVING' | 'PAYING'>('RECEIVING');
+  const [roleInArrangement, setRoleInArrangement] = useState<MaintenanceRole>('RECEIVING');
   const [otherPartyId, setOtherPartyId] = useState('');
   const [expectedAmount, setExpectedAmount] = useState('1500');
   const [frequency, setFrequency] = useState<ArrangementFrequency>('Monthly');
-  const [startDate, setStartDate] = useState('2026-11-01');
+  const [startDate, setStartDate] = useState(`${currentMonthKey()}-01`);
   const [status, setStatus] = useState<ArrangementStatus>('Active');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (!currentUser) return null;
 
-  const otherParentUsers = db.users.filter(
-    (u) => u.role === 'PARENT_CAREGIVER' && u.id !== currentUser.id
-  );
+  // The other party must already be an approved family member of the chosen child.
+  const familyMembersOf = (selectedChildId: string) => {
+    const members = new Map<string, string>();
+    db.familyRelationships
+      .filter((r) => r.childId === selectedChildId && r.userId !== currentUser.id)
+      .forEach((r) => {
+        members.set(r.userId, r.fullName ?? db.users.find((u) => u.id === r.userId)?.fullName ?? 'Family member');
+      });
+    return [...members.entries()].map(([id, fullName]) => ({ id, fullName }));
+  };
+  const otherParentUsers = familyMembersOf(childId);
+
+  const selectChild = (id: string) => {
+    setChildId(id);
+    setOtherPartyId(familyMembersOf(id)[0]?.id ?? '');
+  };
 
   const openCreate = () => {
+    const first = children[0]?.id ?? '';
     setEditing(null);
-    setChildId(children[0]?.id ?? '');
+    setChildId(first);
     setRoleInArrangement('RECEIVING');
-    setOtherPartyId(otherParentUsers[0]?.id ?? '');
+    setOtherPartyId(familyMembersOf(first)[0]?.id ?? '');
     setExpectedAmount('1500');
     setFrequency('Monthly');
-    setStartDate('2026-11-01');
+    setStartDate(`${currentMonthKey()}-01`);
     setStatus('Active');
     setNotes('');
     setError('');
@@ -60,7 +80,7 @@ export function ArrangementsPage() {
     setModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -70,44 +90,47 @@ export function ArrangementsPage() {
       return;
     }
 
-    if (editing) {
-      updateArrangement(editing.id, {
-        expectedAmount: parsedAmount,
-        frequency,
-        startDate,
-        status,
-        notes,
-      });
-      setToast('Maintenance arrangement updated.');
+    if (!editing) {
+      if (!childId) {
+        setError('Please select a child profile first.');
+        return;
+      }
+      if (!otherPartyId) {
+        setError('This child has no other approved family member yet. Link them to the child first.');
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      if (editing) {
+        await updateArrangement(editing.id, {
+          expectedAmount: parsedAmount,
+          frequency,
+          startDate,
+          endDate: editing.endDate,
+          status,
+          notes,
+        });
+        setToast('Maintenance arrangement updated.');
+      } else {
+        await addArrangement({
+          childId,
+          myRole: roleInArrangement,
+          otherUserId: otherPartyId,
+          expectedAmount: parsedAmount,
+          frequency,
+          startDate,
+          notes,
+        });
+        setToast('New maintenance arrangement created.');
+      }
       setModalOpen(false);
-      return;
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'The arrangement could not be saved.');
+    } finally {
+      setSaving(false);
     }
-
-    if (!childId) {
-      setError('Please select a child profile first.');
-      return;
-    }
-    if (!otherPartyId) {
-      setError('Please select the other parent or caregiver.');
-      return;
-    }
-
-    const payingUserId = roleInArrangement === 'PAYING' ? currentUser.id : otherPartyId;
-    const receivingUserId = roleInArrangement === 'RECEIVING' ? currentUser.id : otherPartyId;
-
-    addArrangement({
-      childId,
-      payingUserId,
-      receivingUserId,
-      expectedAmount: parsedAmount,
-      frequency,
-      startDate,
-      status,
-      notes,
-    });
-
-    setToast('New maintenance arrangement created.');
-    setModalOpen(false);
   };
 
   return (
@@ -150,6 +173,7 @@ export function ArrangementsPage() {
             const child = db.children.find((c) => c.id === arr.childId);
             const payer = db.users.find((u) => u.id === arr.payingUserId);
             const receiver = db.users.find((u) => u.id === arr.receivingUserId);
+            const iPay = arr.payingUserId === currentUser.id;
             return (
               <div
                 key={arr.id}
@@ -160,6 +184,15 @@ export function ArrangementsPage() {
                     <h2 className="font-display text-base font-semibold text-[#0F2942]">
                       {child ? `${child.firstName} ${child.lastName}` : 'Child'}
                     </h2>
+                    <span
+                      className={`rounded border px-2 py-0.5 text-xs font-medium ${
+                        iPay
+                          ? 'border-sky-700/25 bg-sky-50 text-sky-900'
+                          : 'border-emerald-700/25 bg-emerald-50 text-emerald-800'
+                      }`}
+                    >
+                      {iPay ? 'You pay' : 'You receive'}
+                    </span>
                     <span className="text-xs text-slate-500">·</span>
                     <span className="text-xs font-medium text-slate-700">{arr.status}</span>
                     <span className="text-xs text-slate-500">·</span>
@@ -219,7 +252,7 @@ export function ArrangementsPage() {
                 <select
                   id="arr-child"
                   value={childId}
-                  onChange={(e) => setChildId(e.target.value)}
+                  onChange={(e) => selectChild(e.target.value)}
                   className="mt-1 block w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
                 >
                   {children.map((c) => (
@@ -238,9 +271,7 @@ export function ArrangementsPage() {
                   <select
                     id="arr-role"
                     value={roleInArrangement}
-                    onChange={(e) =>
-                      setRoleInArrangement(e.target.value as 'RECEIVING' | 'PAYING')
-                    }
+                    onChange={(e) => setRoleInArrangement(e.target.value as MaintenanceRole)}
                     className="mt-1 block w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
                   >
                     <option value="RECEIVING">Receiving Parent / Caregiver</option>
@@ -258,6 +289,7 @@ export function ArrangementsPage() {
                     onChange={(e) => setOtherPartyId(e.target.value)}
                     className="mt-1 block w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
                   >
+                    {otherParentUsers.length === 0 && <option value="">No approved family members</option>}
                     {otherParentUsers.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.fullName}
@@ -318,21 +350,23 @@ export function ArrangementsPage() {
               />
             </div>
 
-            <div>
-              <label htmlFor="arr-status" className="block text-sm font-medium text-slate-800">
-                Status
-              </label>
-              <select
-                id="arr-status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ArrangementStatus)}
-                className="mt-1 block w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
-              >
-                <option value="Active">Active</option>
-                <option value="Paused">Paused</option>
-                <option value="Completed">Completed</option>
-              </select>
-            </div>
+            {editing && (
+              <div>
+                <label htmlFor="arr-status" className="block text-sm font-medium text-slate-800">
+                  Status
+                </label>
+                <select
+                  id="arr-status"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as ArrangementStatus)}
+                  className="mt-1 block w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Paused">Paused</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div>
@@ -359,9 +393,10 @@ export function ArrangementsPage() {
             </button>
             <button
               type="submit"
-              className="rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238]"
+              disabled={saving}
+              className="rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] disabled:opacity-60"
             >
-              {editing ? 'Save Changes' : 'Create Arrangement'}
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Arrangement'}
             </button>
           </div>
         </form>

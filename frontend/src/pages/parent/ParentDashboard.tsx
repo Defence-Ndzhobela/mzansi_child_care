@@ -13,10 +13,11 @@ import {
 import { ArrowRight, Plus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import { CURRENT_DEMO_MONTH, useParentScope } from '../../hooks/useFamilyScope';
-import { Payment } from '../../types';
+import { isAwaitingMyConfirmation, roleInArrangement, useParentScope } from '../../hooks/useFamilyScope';
+import { MaintenanceArrangement, MaintenanceRole, Payment, RoleSummary } from '../../types';
 import {
   calculateAge,
+  currentMonthKey,
   formatMonthYear,
   formatSADate,
   formatSADateShort,
@@ -30,64 +31,124 @@ import { PaymentStatusBadge } from '../../components/StatusBadge';
 import { SummaryCard } from '../../components/SummaryCard';
 import { ToastBanner } from '../../components/ToastBanner';
 
+const MONTHLY_FACTOR = { Monthly: 1, Fortnightly: 2, Weekly: 4 } as const;
+
+function lastMonths(count: number): string[] {
+  const [year, month] = currentMonthKey().split('-').map(Number);
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(year, month - 1 - (count - 1 - index), 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  });
+}
+
+// Mirrors the backend rule: only active arrangements that overlap the month are expected.
+function expectedForMonth(arrangement: MaintenanceArrangement, month: string): number {
+  if (arrangement.status !== 'Active') return 0;
+  const monthStart = `${month}-01`;
+  const monthEnd = `${month}-31`;
+  if (arrangement.startDate > monthEnd || (arrangement.endDate && arrangement.endDate < monthStart)) return 0;
+  return arrangement.expectedAmount * MONTHLY_FACTOR[arrangement.frequency];
+}
+
+function confirmedAmountOf(payment: Payment): number {
+  if (payment.status === 'Confirmed by recipient') return payment.confirmedAmount ?? payment.amount;
+  if (payment.status === 'Partially confirmed') return payment.confirmedAmount ?? 0;
+  return 0;
+}
+
 export function ParentDashboard() {
   const { currentUser } = useAuth();
-  const { db } = useData();
-  const {
-    children,
-    arrangements,
-    payments,
-    expectedMonthly,
-    receivedCurrentMonth,
-    outstandingCurrentMonth,
-    latestPaymentDate,
-    awaitingConfirmationCount,
-  } = useParentScope();
+  const { db, dashboardSummary, maintenanceLoading, maintenanceError } = useData();
+  const { children, arrangements, payments, awaitingMyConfirmation, isPayer, isReceiver } =
+    useParentScope();
 
+  const [selectedView, setSelectedView] = useState<MaintenanceRole | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<Payment | null>(null);
   const [toast, setToast] = useState('');
 
+  // One dashboard adapts to the responsibility the user has in each arrangement. Someone who
+  // both pays and receives gets a switch, so the two kinds of money are never added together.
+  const view: MaintenanceRole | null =
+    selectedView === 'PAYING' && isPayer
+      ? 'PAYING'
+      : selectedView === 'RECEIVING' && isReceiver
+        ? 'RECEIVING'
+        : isReceiver && awaitingMyConfirmation.length > 0
+          ? 'RECEIVING'
+          : isPayer
+            ? 'PAYING'
+            : isReceiver
+              ? 'RECEIVING'
+              : null;
+
+  const myId = currentUser?.id ?? '';
+  const viewArrangements = useMemo(
+    () => arrangements.filter((a) => roleInArrangement(a, myId) === view),
+    [arrangements, myId, view]
+  );
+  const viewPayments = useMemo(
+    () =>
+      payments.filter((p) => (view === 'PAYING' ? p.payingUserId === myId : p.receivingUserId === myId)),
+    [payments, myId, view]
+  );
+  const summary: RoleSummary | null =
+    (view === 'PAYING' ? dashboardSummary?.paying : dashboardSummary?.receiving) ?? null;
+
   const monthlyChartData = useMemo(() => {
-    const months = ['2026-09', '2026-10', '2026-11'];
-    return months.map((m) => {
-      const monthPayments = payments.filter((p) => p.paymentDate.startsWith(m));
-      const confirmed = monthPayments.reduce((sum, p) => {
-        if (p.status === 'Confirmed by recipient') return sum + (p.confirmedAmount ?? p.amount);
-        if (p.status === 'Partially confirmed') return sum + (p.confirmedAmount ?? 0);
-        return sum;
-      }, 0);
+    return lastMonths(3).map((m) => {
+      const inMonth = viewPayments.filter((p) => p.paymentDate.startsWith(m));
       return {
         month: formatMonthYear(m).split(' ')[0],
-        Expected: expectedMonthly,
-        Confirmed: confirmed,
+        Expected: viewArrangements.reduce((sum, a) => sum + expectedForMonth(a, m), 0),
+        Confirmed: inMonth.reduce((sum, p) => sum + confirmedAmountOf(p), 0),
       };
     });
-  }, [payments, expectedMonthly]);
+  }, [viewPayments, viewArrangements]);
 
   if (!currentUser) return null;
 
-  const recentPayments = payments.slice(0, 5);
-  const activeArrangements = arrangements.filter((a) => a.status === 'Active');
+  const month = dashboardSummary?.month ?? currentMonthKey();
+  const recentPayments = viewPayments.slice(0, 5);
+  const activeArrangements = viewArrangements.filter((a) => a.status === 'Active');
+  const payerArrangements = arrangements.filter((a) => a.payingUserId === currentUser.id);
+  const canRecord = payerArrangements.some((a) => a.status === 'Active');
+  const counterpartyHeading = view === 'PAYING' ? 'Paid to' : 'Received from';
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F2942]">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-600">{formatMonthYear(CURRENT_DEMO_MONTH)}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {formatMonthYear(month)}
+            {view === 'PAYING' && ' · Your contributions as paying parent'}
+            {view === 'RECEIVING' && ' · Contributions you receive as caregiver'}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setRecordOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] whitespace-nowrap"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Record Payment</span>
-          </button>
+          {view === 'PAYING' && (
+            <button
+              type="button"
+              onClick={() => setRecordOpen(true)}
+              disabled={!canRecord}
+              className="inline-flex items-center gap-1.5 rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] disabled:opacity-50 whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Record Payment</span>
+            </button>
+          )}
+          {view === 'RECEIVING' && (
+            <Link
+              to="/parent/payments"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] whitespace-nowrap"
+            >
+              <span>Review payments</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          )}
           <Link
             to="/parent/history"
             className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-[#0F2942] hover:bg-slate-50 whitespace-nowrap"
@@ -99,49 +160,144 @@ export function ParentDashboard() {
       </div>
 
       {toast && <ToastBanner type="success" message={toast} onDismiss={() => setToast('')} />}
+      {maintenanceError && (
+        <ToastBanner type="error" message={maintenanceError} onDismiss={() => undefined} />
+      )}
 
-      {awaitingConfirmationCount > 0 && (
+      {isPayer && isReceiver && (
+        <div
+          role="tablist"
+          aria-label="Choose which responsibility to view"
+          className="inline-flex rounded-sm border border-slate-300 bg-white p-0.5 text-sm"
+        >
+          {(
+            [
+              ['PAYING', 'As paying parent'],
+              ['RECEIVING', 'As receiving caregiver'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setSelectedView(key)}
+              className={`rounded-sm px-3.5 py-1.5 font-medium whitespace-nowrap ${
+                view === key ? 'bg-[#0F2942] text-white' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === 'RECEIVING' && awaitingMyConfirmation.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-sky-700/30 bg-sky-50 px-4 py-3 text-sm text-sky-950">
           <div>
             <span className="font-semibold">Action required:</span> You have{' '}
-            <span className="font-mono font-semibold">{awaitingConfirmationCount}</span> recorded{' '}
-            {awaitingConfirmationCount === 1 ? 'payment' : 'payments'} awaiting your confirmation.
+            <span className="font-mono font-semibold">{awaitingMyConfirmation.length}</span> recorded{' '}
+            {awaitingMyConfirmation.length === 1 ? 'payment' : 'payments'} awaiting your confirmation.
           </div>
           <Link
             to="/parent/payments"
             className="rounded-sm bg-[#0F2942] px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 whitespace-nowrap"
           >
-            Review Payments
+            Confirm or dispute
           </Link>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          label="Expected monthly"
-          value={formatZAR(expectedMonthly)}
-          helper={`${activeArrangements.length} active arrangement${activeArrangements.length === 1 ? '' : 's'}`}
-        />
-        <SummaryCard
-          label="Received (Nov 2026)"
-          value={formatZAR(receivedCurrentMonth)}
-          helper="Confirmed payments"
-          tone="green"
-        />
-        <SummaryCard
-          label="Outstanding (Nov 2026)"
-          value={formatZAR(outstandingCurrentMonth)}
-          helper="Based on confirmed records"
-          tone={outstandingCurrentMonth > 0 ? 'amber' : 'green'}
-        />
-        <SummaryCard
-          label="Latest payment"
-          value={latestPaymentDate ? formatSADate(latestPaymentDate) : 'No payments'}
-          helper={payments.length > 0 ? `${payments.length} total recorded payments` : 'Record your first entry'}
-        />
-      </div>
+      {view === 'PAYING' && summary && summary.disputed.count > 0 && (
+        <div className="rounded-sm border border-red-700/30 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <span className="font-semibold">Payment disputed:</span>{' '}
+          {summary.disputed.count} {summary.disputed.count === 1 ? 'payment' : 'payments'} (
+          {formatZAR(summary.disputed.amount)}) disputed by the receiving parent. Open the payment
+          history to see the reason.
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      {view === 'PAYING' && summary && summary.awaitingConfirmation.count > 0 && (
+        <div className="rounded-sm border border-sky-700/30 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+          {summary.awaitingConfirmation.count}{' '}
+          {summary.awaitingConfirmation.count === 1 ? 'payment is' : 'payments are'} waiting for the
+          receiving parent to confirm ({formatZAR(summary.awaitingConfirmation.amount)}). Confirmed
+          amounts are what count towards your contribution.
+        </div>
+      )}
+
+      {view === null && (
+        <EmptyState
+          title={maintenanceLoading ? 'Loading your arrangements…' : 'No maintenance arrangements yet'}
+          description={
+            maintenanceLoading
+              ? 'Fetching your arrangements and payments.'
+              : 'Whether you pay or receive depends on the maintenance arrangements you share with an approved family member of a child. Create one to get started.'
+          }
+        />
+      )}
+
+      {view === 'PAYING' && summary && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard
+            label="Expected maintenance (you pay)"
+            value={formatZAR(summary.expectedAmount)}
+            helper={`${activeArrangements.length} active arrangement${activeArrangements.length === 1 ? '' : 's'}`}
+          />
+          <SummaryCard
+            label="Amount paid"
+            value={formatZAR(summary.paidAmount)}
+            helper="Recorded by you this month"
+          />
+          <SummaryCard
+            label="Confirmed by recipient"
+            value={formatZAR(summary.confirmedAmount)}
+            helper={
+              summary.awaitingConfirmation.count > 0
+                ? `${formatZAR(summary.awaitingConfirmation.amount)} still awaiting confirmation`
+                : 'Accepted as received'
+            }
+            tone="green"
+          />
+          <SummaryCard
+            label="Outstanding contribution"
+            value={formatZAR(summary.outstandingAmount)}
+            helper="Expected minus confirmed payments"
+            tone={summary.outstandingAmount > 0 ? 'amber' : 'green'}
+          />
+        </div>
+      )}
+
+      {view === 'RECEIVING' && summary && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard
+            label="Expected maintenance (you receive)"
+            value={formatZAR(summary.expectedAmount)}
+            helper={`${activeArrangements.length} active arrangement${activeArrangements.length === 1 ? '' : 's'}`}
+          />
+          <SummaryCard
+            label="Amount received"
+            value={formatZAR(summary.confirmedAmount)}
+            helper="Payments you have confirmed"
+            tone="green"
+          />
+          <SummaryCard
+            label="Outstanding to receive"
+            value={formatZAR(summary.outstandingAmount)}
+            helper="Expected minus amounts you confirmed"
+            tone={summary.outstandingAmount > 0 ? 'amber' : 'green'}
+          />
+          <SummaryCard
+            label="Awaiting your confirmation"
+            value={String(awaitingMyConfirmation.length)}
+            helper={`${formatZAR(summary.awaitingConfirmation.amount)} recorded by the paying parent`}
+            tone={awaitingMyConfirmation.length > 0 ? 'amber' : 'default'}
+          />
+        </div>
+      )}
+
+      {view !== null && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="lg:col-span-7 border border-slate-200 bg-white p-5 rounded-sm">
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3">
             <h2 className="font-display text-base font-semibold text-[#0F2942]">
@@ -156,9 +312,13 @@ export function ParentDashboard() {
             <div className="mt-4">
               <EmptyState
                 title="No payments recorded yet"
-                description="Record a maintenance payment to begin tracking your contribution history."
-                actionLabel="Record Payment"
-                onAction={() => setRecordOpen(true)}
+                description={
+                  view === 'PAYING'
+                    ? 'Record a maintenance payment to begin tracking your contribution history.'
+                    : 'Payments recorded by the paying parent will appear here for you to confirm.'
+                }
+                actionLabel={view === 'PAYING' && canRecord ? 'Record Payment' : undefined}
+                onAction={view === 'PAYING' && canRecord ? () => setRecordOpen(true) : undefined}
               />
             </div>
           ) : (
@@ -168,6 +328,7 @@ export function ParentDashboard() {
                   <tr className="text-left text-xs font-semibold text-slate-500">
                     <th className="py-2 pr-3">Date</th>
                     <th className="py-2 pr-3">Child</th>
+                    <th className="py-2 pr-3">{counterpartyHeading}</th>
                     <th className="py-2 pr-3 text-right">Amount</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 text-right">Action</th>
@@ -176,9 +337,10 @@ export function ParentDashboard() {
                 <tbody className="divide-y divide-slate-100">
                   {recentPayments.map((p) => {
                     const child = db.children.find((c) => c.id === p.childId);
-                    const canConfirm =
-                      p.receivingUserId === currentUser.id &&
-                      (p.status === 'Awaiting confirmation' || p.status === 'Submitted');
+                    const counterparty = db.users.find(
+                      (u) => u.id === (view === 'PAYING' ? p.receivingUserId : p.payingUserId)
+                    );
+                    const canConfirm = isAwaitingMyConfirmation(p, currentUser.id);
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/70">
                         <td className="py-2.5 pr-3 text-xs text-slate-700 whitespace-nowrap">
@@ -186,6 +348,9 @@ export function ParentDashboard() {
                         </td>
                         <td className="py-2.5 pr-3 font-medium text-[#0F2942] whitespace-nowrap">
                           {child ? `${child.firstName} ${child.lastName}` : '—'}
+                        </td>
+                        <td className="py-2.5 pr-3 text-xs text-slate-700 whitespace-nowrap">
+                          {counterparty?.fullName ?? '—'}
                         </td>
                         <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-slate-900 whitespace-nowrap">
                           {formatZAR(p.amount)}
@@ -225,7 +390,10 @@ export function ParentDashboard() {
             <h2 className="font-display text-base font-semibold text-[#0F2942]">
               Monthly Expected vs Confirmed (ZAR)
             </h2>
-            <p className="text-xs text-slate-500">September – November 2026</p>
+            <p className="text-xs text-slate-500">
+              Last three months ·{' '}
+              {view === 'PAYING' ? 'arrangements where you pay' : 'arrangements where you receive'}
+            </p>
           </div>
           <div className="mt-4 h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -248,7 +416,8 @@ export function ParentDashboard() {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="border border-slate-200 bg-white p-5 rounded-sm">
@@ -264,17 +433,17 @@ export function ParentDashboard() {
             </Link>
           </div>
 
-          {arrangements.length === 0 ? (
+          {viewArrangements.length === 0 ? (
             <p className="mt-4 text-sm text-slate-600">
               No maintenance arrangements found. Create one to start tracking expected monthly
               payments.
             </p>
           ) : (
             <div className="mt-3 divide-y divide-slate-100">
-              {arrangements.map((arr) => {
+              {viewArrangements.map((arr) => {
                 const child = db.children.find((c) => c.id === arr.childId);
-                const payer = db.users.find((u) => u.id === arr.payingUserId);
-                const receiver = db.users.find((u) => u.id === arr.receivingUserId);
+                const iPay = arr.payingUserId === currentUser.id;
+                const other = db.users.find((u) => u.id === (iPay ? arr.receivingUserId : arr.payingUserId));
                 return (
                   <div key={arr.id} className="py-3 flex items-start justify-between gap-4">
                     <div>
@@ -282,7 +451,8 @@ export function ParentDashboard() {
                         {child ? `${child.firstName} ${child.lastName}` : 'Child'}
                       </p>
                       <p className="text-xs text-slate-600">
-                        {payer?.fullName} → {receiver?.fullName} · {arr.frequency}
+                        {iPay ? 'You pay' : 'You receive from'} {other?.fullName ?? 'a family member'} ·{' '}
+                        {arr.frequency}
                       </p>
                     </div>
                     <div className="text-right">
@@ -346,7 +516,7 @@ export function ParentDashboard() {
       <RecordPaymentModal
         isOpen={recordOpen}
         onClose={() => setRecordOpen(false)}
-        arrangements={arrangements}
+        arrangements={payerArrangements}
         onSuccess={(msg) => setToast(msg)}
       />
 

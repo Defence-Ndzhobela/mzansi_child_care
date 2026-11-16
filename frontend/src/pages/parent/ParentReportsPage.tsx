@@ -2,31 +2,36 @@ import { useMemo, useState } from 'react';
 import { Download, Printer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import { CURRENT_DEMO_MONTH, useParentScope } from '../../hooks/useFamilyScope';
+import { useParentScope } from '../../hooks/useFamilyScope';
 import {
+  currentMonthKey,
   exportToCSV,
   formatMonthYear,
   formatSADate,
   formatSADateShort,
   formatZAR,
   getMonthKey,
+  todayIso,
 } from '../../utils/format';
 import { PaymentStatusBadge } from '../../components/StatusBadge';
 import { SummaryCard } from '../../components/SummaryCard';
 import { ToastBanner } from '../../components/ToastBanner';
 
+const MONTHLY_FACTOR = { Monthly: 1, Fortnightly: 2, Weekly: 4 } as const;
+
 export function ParentReportsPage() {
   const { currentUser } = useAuth();
   const { db } = useData();
-  const { arrangements, payments, expectedMonthly } = useParentScope();
+  const { arrangements, payments } = useParentScope();
+  const thisMonth = currentMonthKey();
 
   const availableMonths = useMemo(() => {
-    const keys = new Set<string>([CURRENT_DEMO_MONTH]);
+    const keys = new Set<string>([thisMonth]);
     payments.forEach((p) => keys.add(getMonthKey(p.paymentDate)));
     return Array.from(keys).sort((a, b) => b.localeCompare(a));
-  }, [payments]);
+  }, [payments, thisMonth]);
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(CURRENT_DEMO_MONTH);
+  const [selectedMonth, setSelectedMonth] = useState<string>(thisMonth);
   const [toast, setToast] = useState('');
 
   const periodPayments = useMemo(() => {
@@ -67,21 +72,23 @@ export function ParentReportsPage() {
           if (p.status === 'Partially confirmed') return sum + (p.confirmedAmount ?? 0);
           return sum;
         }, 0);
+        const monthlyExpected = arr.expectedAmount * MONTHLY_FACTOR[arr.frequency];
         const expectedForPeriod =
           selectedMonth === 'ALL'
-            ? arr.expectedAmount * Math.max(1, availableMonths.length)
-            : arr.expectedAmount;
+            ? monthlyExpected * Math.max(1, availableMonths.length)
+            : monthlyExpected;
         const outstanding = Math.max(0, expectedForPeriod - confirmed);
         return {
           arrangementId: arr.id,
           childName: child ? `${child.firstName} ${child.lastName}` : 'Child',
+          role: arr.payingUserId === currentUser?.id ? 'You pay' : 'You receive',
           expected: expectedForPeriod,
           confirmed,
           outstanding,
           count: childPayments.length,
         };
       });
-  }, [arrangements, db.children, periodPayments, selectedMonth, availableMonths.length]);
+  }, [arrangements, db.children, periodPayments, selectedMonth, availableMonths.length, currentUser?.id]);
 
   if (!currentUser) return null;
 
@@ -180,7 +187,7 @@ export function ParentReportsPage() {
                 {selectedMonth === 'ALL' ? 'All Recorded Months' : formatMonthYear(selectedMonth)}
               </p>
             </div>
-            <p className="text-xs text-slate-500">Generated {formatSADate('2026-11-12')}</p>
+            <p className="text-xs text-slate-500">Generated {formatSADate(todayIso())}</p>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -202,11 +209,6 @@ export function ParentReportsPage() {
             <SummaryCard
               label="Disputed Amount"
               value={formatZAR(statusBreakdown.disputed)}
-              helper={
-                selectedMonth !== 'ALL'
-                  ? `Monthly Expected: ${formatZAR(expectedMonthly)}`
-                  : undefined
-              }
             />
           </div>
         </div>
@@ -229,7 +231,10 @@ export function ParentReportsPage() {
               <tbody className="divide-y divide-slate-200">
                 {perChildRows.map((row) => (
                   <tr key={row.arrangementId}>
-                    <td className="px-4 py-3 font-medium text-[#0F2942]">{row.childName}</td>
+                    <td className="px-4 py-3 font-medium text-[#0F2942]">
+                      {row.childName}
+                      <span className="ml-2 text-xs font-normal text-slate-500">{row.role}</span>
+                    </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums">
                       {formatZAR(row.expected)}
                     </td>

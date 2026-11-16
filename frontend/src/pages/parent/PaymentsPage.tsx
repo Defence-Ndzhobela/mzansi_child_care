@@ -15,7 +15,8 @@ import { ToastBanner } from '../../components/ToastBanner';
 export function PaymentsPage() {
   const { currentUser } = useAuth();
   const { db } = useData();
-  const { arrangements, payments } = useParentScope();
+  const { payingArrangements, payments, isPayer, isReceiver } = useParentScope();
+  const canRecord = payingArrangements.some((a) => a.status === 'Active');
 
   const [recordOpen, setRecordOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -38,21 +39,30 @@ export function PaymentsPage() {
       )
   );
 
+  const subtitle =
+    isPayer && isReceiver
+      ? 'Record payments you make and confirm payments you receive.'
+      : isReceiver
+        ? 'Confirm, partially confirm or dispute payments recorded for you.'
+        : 'Record the payments you make and track their confirmation.';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F2942]">Payments</h1>
-          <p className="mt-1 text-sm text-slate-600">Record or confirm a payment.</p>
+          <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setRecordOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] whitespace-nowrap"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Record Payment</span>
-        </button>
+        {canRecord && (
+          <button
+            type="button"
+            onClick={() => setRecordOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Record Payment</span>
+          </button>
+        )}
       </div>
 
       {toast && <ToastBanner type="success" message={toast} onDismiss={() => setToast('')} />}
@@ -131,9 +141,13 @@ export function PaymentsPage() {
           <div className="p-6">
             <EmptyState
               title="No payment records yet"
-              description="Record your first maintenance contribution to start tracking confirmations and balances."
-              actionLabel="Record Payment"
-              onAction={() => setRecordOpen(true)}
+              description={
+                canRecord
+                  ? 'Record your first maintenance contribution to start tracking confirmations and balances.'
+                  : 'Payments recorded by the paying parent will appear here for you to confirm.'
+              }
+              actionLabel={canRecord ? 'Record Payment' : undefined}
+              onAction={canRecord ? () => setRecordOpen(true) : undefined}
               icon={<CreditCard className="h-6 w-6" />}
             />
           </div>
@@ -198,7 +212,7 @@ export function PaymentsPage() {
       <RecordPaymentModal
         isOpen={recordOpen}
         onClose={() => setRecordOpen(false)}
-        arrangements={arrangements}
+        arrangements={payingArrangements}
         onSuccess={(msg) => setToast(msg)}
       />
 
