@@ -3,7 +3,7 @@ import { FileText, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { MaintenanceArrangement, PaymentMethod } from '../types';
-import { formatZAR } from '../utils/format';
+import { formatZAR, todayIso } from '../utils/format';
 import { Modal } from './Modal';
 
 interface RecordPaymentModalProps {
@@ -32,24 +32,26 @@ export function RecordPaymentModal({
   const { currentUser } = useAuth();
   const { db, recordPayment } = useData();
 
-  const activeArrangements = arrangements.filter((a) => a.status === 'Active');
+  // Only the paying parent of an arrangement can record a payment for it (the server enforces this too).
+  const activeArrangements = arrangements.filter(
+    (a) => a.status === 'Active' && a.payingUserId === currentUser?.id
+  );
 
   const [arrangementId, setArrangementId] = useState(
     defaultArrangementId || activeArrangements[0]?.id || ''
   );
   const [amount, setAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState('2026-11-12');
+  const [paymentDate, setPaymentDate] = useState(todayIso());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('EFT Bank Transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<{
     fileName: string;
     fileType: string;
     fileSizeLabel: string;
-    fileUrl: string;
-    description: string;
   } | null>(null);
   const [evidenceDescription, setEvidenceDescription] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,12 +59,13 @@ export function RecordPaymentModal({
     setArrangementId(first);
     const arr = activeArrangements.find((a) => a.id === first);
     setAmount(arr ? String(arr.expectedAmount) : '');
-    setPaymentDate('2026-11-12');
+    setPaymentDate(todayIso());
     setPaymentMethod('EFT Bank Transfer');
     setPaymentReference('');
     setEvidenceFile(null);
     setEvidenceDescription('');
     setError('');
+    setSubmitting(false);
   }, [isOpen, defaultArrangementId]);
 
   const handleArrangementChange = (id: string) => {
@@ -73,47 +76,23 @@ export function RecordPaymentModal({
     }
   };
 
+  // Only the file's name, type and size are recorded; the file itself is not uploaded yet.
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const sizeKB = Math.max(1, Math.round(file.size / 1024));
     const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
-
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setEvidenceFile({
-          fileName: file.name,
-          fileType: file.type,
-          fileSizeLabel: sizeLabel,
-          fileUrl: typeof reader.result === 'string' ? reader.result : `simulated://local/${file.name}`,
-          description: evidenceDescription || 'Uploaded proof of payment image (demo local file).',
-        });
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setEvidenceFile({
-        fileName: file.name,
-        fileType: file.type || 'application/pdf',
-        fileSizeLabel: sizeLabel,
-        fileUrl: `simulated://local/${file.name}`,
-        description: evidenceDescription || 'Uploaded proof of payment document metadata (demo local file).',
-      });
+    const isImage = file.type.startsWith('image/');
+    if (!isImage && file.type !== 'application/pdf') {
+      setError('Proof of payment must be an image or a PDF.');
+      return;
     }
+    setError('');
+    setEvidenceFile({ fileName: file.name, fileType: file.type, fileSizeLabel: sizeLabel });
   };
 
-  const handleAttachSampleEvidence = () => {
-    setEvidenceFile({
-      fileName: `demo_payment_slip_${paymentDate}.pdf`,
-      fileType: 'application/pdf',
-      fileSizeLabel: '128 KB',
-      fileUrl: `simulated://evidence/demo_payment_slip_${paymentDate}.pdf`,
-      description: evidenceDescription || 'Sample payment receipt.',
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -134,20 +113,26 @@ export function RecordPaymentModal({
       return;
     }
 
-    recordPayment({
-      arrangementId,
-      amount: parsedAmount,
-      paymentDate,
-      paymentMethod,
-      paymentReference: paymentReference.trim(),
-      recordedByUserId: currentUser.id,
-      evidenceFile: evidenceFile
-        ? {
-            ...evidenceFile,
-            description: evidenceDescription.trim() || evidenceFile.description,
-          }
-        : undefined,
-    });
+    setSubmitting(true);
+    try {
+      await recordPayment({
+        arrangementId,
+        amount: parsedAmount,
+        paymentDate,
+        paymentMethod,
+        paymentReference: paymentReference.trim(),
+        evidenceFile: evidenceFile
+          ? {
+              ...evidenceFile,
+              description: evidenceDescription.trim(),
+            }
+          : undefined,
+      });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'The payment could not be recorded.');
+      setSubmitting(false);
+      return;
+    }
 
     onSuccess(
       `Payment of ${formatZAR(parsedAmount)} recorded and sent to the receiving parent for confirmation.`
@@ -166,8 +151,8 @@ export function RecordPaymentModal({
       {activeArrangements.length === 0 ? (
         <div className="py-4 text-sm text-slate-700">
           <p>
-            No active maintenance arrangements are linked to your account yet. Please create a child
-            profile and maintenance arrangement first.
+            You are not the paying parent on any active maintenance arrangement, so there is nothing
+            to record. Only the paying parent can record a payment.
           </p>
           <div className="mt-4 flex justify-end">
             <button
@@ -199,13 +184,12 @@ export function RecordPaymentModal({
             >
               {activeArrangements.map((arr) => {
                 const child = db.children.find((c) => c.id === arr.childId);
-                const payer = db.users.find((u) => u.id === arr.payingUserId);
                 const receiver = db.users.find((u) => u.id === arr.receivingUserId);
                 return (
                   <option key={arr.id} value={arr.id}>
                     {child ? `${child.firstName} ${child.lastName}` : 'Child'} —{' '}
-                    {formatZAR(arr.expectedAmount)}/{arr.frequency.toLowerCase()} ({payer?.fullName} →{' '}
-                    {receiver?.fullName})
+                    {formatZAR(arr.expectedAmount)}/{arr.frequency.toLowerCase()} (to{' '}
+                    {receiver?.fullName ?? 'receiving parent'})
                   </option>
                 );
               })}
@@ -289,16 +273,10 @@ export function RecordPaymentModal({
               <span className="text-sm font-medium text-[#0F2942]">
                 Payment evidence
               </span>
-              <button
-                type="button"
-                onClick={handleAttachSampleEvidence}
-                className="text-xs font-medium text-[#006847] hover:underline"
-              >
-                Add sample receipt
-              </button>
             </div>
             <p className="mt-1 text-xs text-slate-600">
-              Uploads are for record-keeping and are not bank-verified.
+              Only the file name, type and size are recorded for now. Records are for
+              record-keeping and are not bank-verified.
             </p>
 
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -346,9 +324,10 @@ export function RecordPaymentModal({
             </button>
             <button
               type="submit"
-              className="rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238]"
+              disabled={submitting}
+              className="rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] disabled:opacity-60"
             >
-              Submit Payment Record
+              {submitting ? 'Saving…' : 'Submit Payment Record'}
             </button>
           </div>
         </form>

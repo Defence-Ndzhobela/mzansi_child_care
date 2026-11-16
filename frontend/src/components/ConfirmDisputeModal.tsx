@@ -21,6 +21,7 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
   const [partialAmount, setPartialAmount] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!payment) return;
@@ -28,6 +29,7 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
     setPartialAmount(String(Math.max(0, Math.round(payment.amount * 0.5))));
     setNote('');
     setError('');
+    setSubmitting(false);
   }, [payment]);
 
   if (!payment) return null;
@@ -35,10 +37,30 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
   const child = db.children.find((c) => c.id === payment.childId);
   const payer = db.users.find((u) => u.id === payment.payingUserId);
 
+  const submit = async (
+    request: Parameters<typeof confirmOrDisputePayment>[0],
+    successMessage: string
+  ) => {
+    setSubmitting(true);
+    try {
+      await confirmOrDisputePayment(request);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'The decision could not be saved.');
+      setSubmitting(false);
+      return;
+    }
+    onSuccess(successMessage);
+    onClose();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!currentUser) return;
+    if (currentUser.id !== payment.receivingUserId) {
+      setError('Only the receiving parent can confirm or dispute this payment.');
+      return;
+    }
 
     if (decision === 'CONFIRM_PARTIAL') {
       const val = Number(partialAmount);
@@ -48,17 +70,10 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
         );
         return;
       }
-      confirmOrDisputePayment({
-        paymentId: payment.id,
-        action: 'CONFIRM_PARTIAL',
-        confirmedAmount: val,
-        note,
-        actorUserId: currentUser.id,
-      });
-      onSuccess(
+      void submit(
+        { paymentId: payment.id, action: 'CONFIRM_PARTIAL', confirmedAmount: val, note },
         `Payment partially confirmed at ${formatZAR(val)}. Outstanding balances have been updated.`
       );
-      onClose();
       return;
     }
 
@@ -67,27 +82,17 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
         setError('Please provide a clear reason for disputing this payment.');
         return;
       }
-      confirmOrDisputePayment({
-        paymentId: payment.id,
-        action: 'DISPUTE',
-        confirmedAmount: 0,
-        note,
-        actorUserId: currentUser.id,
-      });
-      onSuccess('Payment marked as Disputed and flagged as a payment concern for review.');
-      onClose();
+      void submit(
+        { paymentId: payment.id, action: 'DISPUTE', note },
+        'Payment marked as Disputed. The paying parent and any assigned social worker can see it.'
+      );
       return;
     }
 
-    confirmOrDisputePayment({
-      paymentId: payment.id,
-      action: 'CONFIRM_FULL',
-      confirmedAmount: payment.amount,
-      note,
-      actorUserId: currentUser.id,
-    });
-    onSuccess(`Full payment of ${formatZAR(payment.amount)} confirmed as received.`);
-    onClose();
+    void submit(
+      { paymentId: payment.id, action: 'CONFIRM_FULL', note },
+      `Full payment of ${formatZAR(payment.amount)} confirmed as received.`
+    );
   };
 
   return (
@@ -197,8 +202,8 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
             <div>
               <p className="text-sm font-medium text-red-900">Dispute Payment</p>
               <p className="text-xs text-slate-600">
-                Mark as Disputed if funds were not received or details are incorrect. This also logs
-                a payment concern for review.
+                Mark as Disputed if funds were not received or details are incorrect. A reason is
+                required, and the decision is final once saved.
               </p>
             </div>
           </label>
@@ -232,13 +237,14 @@ export function ConfirmDisputeModal({ payment, onClose, onSuccess }: ConfirmDisp
           </button>
           <button
             type="submit"
-            className={`rounded-sm px-4 py-2 text-sm font-medium text-white ${
+            disabled={submitting}
+            className={`rounded-sm px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
               decision === 'DISPUTE'
                 ? 'bg-red-700 hover:bg-red-800'
                 : 'bg-[#006847] hover:bg-[#005238]'
             }`}
           >
-            {decision === 'DISPUTE' ? 'Submit Dispute' : 'Save Confirmation'}
+            {submitting ? 'Saving…' : decision === 'DISPUTE' ? 'Submit Dispute' : 'Save Confirmation'}
           </button>
         </div>
       </form>

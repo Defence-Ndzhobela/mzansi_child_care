@@ -60,39 +60,39 @@ export function PaymentDetailModal({
 
   const isSocialWorker = currentUser.role === 'SOCIAL_WORKER';
   const isRecipient = currentUser.id === payment.receivingUserId;
+  const isPayer = currentUser.id === payment.payingUserId;
   const canConfirmOrDispute =
     !isSocialWorker &&
     isRecipient &&
     (payment.status === 'Awaiting confirmation' || payment.status === 'Submitted');
+  const canAddEvidence = !isSocialWorker && isPayer;
 
-  const handleUploadExtraEvidence = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Only metadata is saved for now; the file itself is not uploaded.
+  const handleUploadExtraEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      setFeedback('Proof of payment must be an image or a PDF.');
+      input.value = '';
+      return;
+    }
     const sizeKB = Math.max(1, Math.round(file.size / 1024));
     const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
 
-    const finishUpload = (url: string) => {
-      addEvidenceToPayment({
+    try {
+      await addEvidenceToPayment({
         paymentId: payment.id,
-        uploadedBy: currentUser.id,
         fileName: file.name,
-        fileType: file.type || 'application/octet-stream',
+        fileType: file.type,
         fileSizeLabel: sizeLabel,
-        fileUrl: url,
         description: 'Additional payment evidence.',
       });
-      setFeedback(`Evidence file "${file.name}" attached to record.`);
-    };
-
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        finishUpload(typeof reader.result === 'string' ? reader.result : `simulated://${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      finishUpload(`simulated://local/${file.name}`);
+      setFeedback(`Evidence "${file.name}" attached to this payment record.`);
+    } catch (uploadError) {
+      setFeedback(uploadError instanceof Error ? uploadError.message : 'The evidence could not be saved.');
     }
+    input.value = '';
   };
 
   const handleSaveReview = (e: React.FormEvent) => {
@@ -203,7 +203,7 @@ export function PaymentDetailModal({
             <h3 className="text-sm font-semibold text-[#0F2942]">
               Payment Evidence ({evidenceList.length})
             </h3>
-            {!isSocialWorker && (
+            {canAddEvidence && (
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
                 <Paperclip className="h-3.5 w-3.5" />
                 <span>Attach additional evidence</span>
@@ -225,7 +225,6 @@ export function PaymentDetailModal({
             <div className="mt-2 space-y-2">
               {evidenceList.map((ev) => {
                 const uploader = db.users.find((u) => u.id === ev.uploadedBy);
-                const isImageData = ev.fileUrl.startsWith('data:image/');
                 return (
                   <div
                     key={ev.id}
@@ -240,20 +239,10 @@ export function PaymentDetailModal({
                             {ev.fileSizeLabel} · Uploaded {formatSADate(ev.uploadedAt)} by{' '}
                             {uploader?.fullName ?? 'User'}
                           </p>
-                          <p className="mt-1 text-xs text-slate-700">{ev.description}</p>
+                          {ev.description && <p className="mt-1 text-xs text-slate-700">{ev.description}</p>}
                         </div>
                       </div>
                     </div>
-                    {isImageData && (
-                      <div className="mt-3 border border-slate-200 bg-slate-50 p-2">
-                        <img
-                          src={ev.fileUrl}
-                          alt={ev.fileName}
-                          referrerPolicy="no-referrer"
-                          className="max-h-48 w-auto object-contain"
-                        />
-                      </div>
-                    )}
                   </div>
                 );
               })}
