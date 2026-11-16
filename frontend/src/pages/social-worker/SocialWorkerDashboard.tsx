@@ -10,6 +10,8 @@ import { PaymentDetailModal } from '../../components/PaymentDetailModal';
 import { PaymentStatusBadge, ReviewStatusBadge } from '../../components/StatusBadge';
 import { SummaryCard } from '../../components/SummaryCard';
 import { ToastBanner } from '../../components/ToastBanner';
+import { WelcomeBanner } from '../../components/WelcomeBanner';
+import { IMAGES } from '../../config/images';
 
 export function SocialWorkerDashboard() {
   const { currentUser } = useAuth();
@@ -90,6 +92,12 @@ export function SocialWorkerDashboard() {
           Payment concerns ({openConcernsCount})
         </Link>
       </div>
+
+      <WelcomeBanner title={`Welcome, ${currentUser.fullName.split(' ')[0]}`} image={IMAGES.socialWorker} imagePosition="72% center">
+        {children.length > 0
+          ? `You have ${children.length} assigned ${children.length === 1 ? 'case' : 'cases'}. Thank you for the care you give to the families you support.`
+          : 'Thank you for the care you give to families. Cases assigned to you will appear here.'}
+      </WelcomeBanner>
 
       {toast && <ToastBanner type="success" message={toast} onDismiss={() => setToast('')} />}
 

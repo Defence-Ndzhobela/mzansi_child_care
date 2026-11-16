@@ -3,6 +3,8 @@ import { RotateCcw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { ToastBanner } from '../../components/ToastBanner';
+import { WelcomeBanner } from '../../components/WelcomeBanner';
+import { IMAGES } from '../../config/images';
 
 export function ParentProfilePage() {
   const { currentUser } = useAuth();
@@ -43,6 +45,10 @@ export function ParentProfilePage() {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="font-display text-2xl font-bold text-[#0F2942]">Profile and Settings</h1>
       </div>
+
+      <WelcomeBanner title="Support for your family" image={IMAGES.familySupport} imagePosition="center 30%">
+        Keep your details up to date so the people supporting your child can reach you.
+      </WelcomeBanner>
 
       {toast && <ToastBanner type="success" message={toast} onDismiss={() => setToast('')} />}
       {error && <ToastBanner type="error" message={error} onDismiss={() => setError('')} />}

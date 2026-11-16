@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { IMAGES } from '../config/images';
 import { useData } from '../context/DataContext';
 import { formatSADateShort } from '../utils/format';
 
@@ -148,8 +149,17 @@ export function DashboardLayout() {
         }`}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <Link to="/" className="font-display text-base font-bold text-[#0F2942]">
-            Mzansi ChildCare
+          <Link to="/" className="flex items-center gap-2.5 font-display text-base font-bold text-[#0F2942]">
+            {isAdmin && (
+              <img
+                src={IMAGES.governmentLogo.src}
+                alt={IMAGES.governmentLogo.alt}
+                width={IMAGES.governmentLogo.width}
+                height={IMAGES.governmentLogo.height}
+                className="h-9 w-auto shrink-0"
+              />
+            )}
+            <span>Mzansi ChildCare</span>
           </Link>
           <button
             type="button"

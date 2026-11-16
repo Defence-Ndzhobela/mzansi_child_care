@@ -30,6 +30,8 @@ import { RecordPaymentModal } from '../../components/RecordPaymentModal';
 import { PaymentStatusBadge } from '../../components/StatusBadge';
 import { SummaryCard } from '../../components/SummaryCard';
 import { ToastBanner } from '../../components/ToastBanner';
+import { WelcomeBanner } from '../../components/WelcomeBanner';
+import { IMAGES } from '../../config/images';
 
 const MONTHLY_FACTOR = { Monthly: 1, Fortnightly: 2, Weekly: 4 } as const;
 
@@ -158,6 +160,16 @@ export function ParentDashboard() {
           </Link>
         </div>
       </div>
+
+      <WelcomeBanner
+        title={view === 'PAYING' ? 'Supporting your child' : 'Caring for your child'}
+        image={view === 'PAYING' ? IMAGES.familySupport : IMAGES.parentAndChild}
+        imagePosition="center 30%"
+      >
+        {view === 'PAYING'
+          ? 'Keep clear, confirmed records of the maintenance you contribute.'
+          : 'Keep track of the maintenance contributions made for your child.'}
+      </WelcomeBanner>
 
       {toast && <ToastBanner type="success" message={toast} onDismiss={() => setToast('')} />}
       {maintenanceError && (
