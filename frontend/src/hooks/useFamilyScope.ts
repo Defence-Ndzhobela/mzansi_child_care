@@ -97,13 +97,11 @@ export function useSocialWorkerScope() {
       };
     }
 
-    const assignedChildIds = new Set(
-      db.assignments
-        .filter((a) => a.socialWorkerId === currentUser.id && a.assignmentStatus === 'ACTIVE')
-        .map((a) => a.childId)
-    );
+    // The backend only returns children with an ACTIVE assignment to this worker, so everything below
+    // (children, arrangements, payments) already shares one scope. Nothing is read from browser storage.
+    const assignedChildIds = new Set(db.children.map((c) => c.id));
 
-    const children = db.children.filter((c) => assignedChildIds.has(c.id));
+    const children = db.children;
     const arrangements = db.arrangements.filter((a) => assignedChildIds.has(a.childId));
     const payments = db.payments
       .filter((p) => assignedChildIds.has(p.childId))

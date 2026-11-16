@@ -17,6 +17,7 @@ import {
   ProfessionalNote,
   RelationshipType,
   ReviewStatus,
+  SocialWorkerSummary,
   User,
 } from '../types';
 import { DEMO_USER_DB_IDS, loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
@@ -39,6 +40,11 @@ interface DataContextValue {
   maintenanceError: string | null;
   dashboardSummary: DashboardSummary | null;
   pendingChildLinkRequests: ChildLinkRequest[];
+  // Active social workers a parent can choose from, loaded from the backend.
+  socialWorkers: SocialWorkerSummary[];
+  socialWorkersLoading: boolean;
+  socialWorkersError: string | null;
+  refreshSocialWorkers: () => Promise<void>;
   refreshFamilyData: () => Promise<void>;
   refreshMaintenanceData: () => Promise<void>;
   refreshChildLinkRequests: () => Promise<void>;
@@ -53,14 +59,18 @@ interface DataContextValue {
     southAfricanId: string;
     relationshipType: RelationshipType;
     isPrimaryCaregiver: boolean;
+    socialWorkerId: string;
   }) => Promise<void>;
   updateChild: (
     childId: string,
     updates: { firstName: string; lastName: string; dateOfBirth: string }
   ) => Promise<void>;
+  // Only the child's creator can assign or change the worker; the server enforces it and keeps the history.
+  assignSocialWorker: (childId: string, socialWorkerId: string) => Promise<void>;
   requestChildLink: (southAfricanId: string, relationshipType: RelationshipType) => Promise<void>;
   respondToChildLinkRequest: (requestId: string, decision: 'APPROVED' | 'REJECTED') => Promise<void>;
   // The server decides who pays and who receives from myRole and the signed-in account.
+  // socialWorkerId is only needed when the child has no social worker yet.
   addArrangement: (input: {
     childId: string;
     myRole: MaintenanceRole;
@@ -70,6 +80,7 @@ interface DataContextValue {
     startDate: string;
     endDate?: string;
     notes?: string;
+    socialWorkerId?: string;
   }) => Promise<void>;
   updateArrangement: (
     arrangementId: string,
@@ -183,7 +194,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [pendingChildLinkRequests, setPendingChildLinkRequests] = useState<ChildLinkRequest[]>([]);
+  const [socialWorkers, setSocialWorkers] = useState<SocialWorkerSummary[]>([]);
+  const [socialWorkersLoading, setSocialWorkersLoading] = useState(false);
+  const [socialWorkersError, setSocialWorkersError] = useState<string | null>(null);
   const maintenanceRequest = useRef(0);
+
+  const refreshSocialWorkers = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'PARENT_CAREGIVER') {
+      setSocialWorkers([]);
+      setSocialWorkersError(null);
+      return;
+    }
+    setSocialWorkersLoading(true);
+    setSocialWorkersError(null);
+    try {
+      const response = await apiFetch('/parent/social-workers');
+      const list = await readList<SocialWorkerSummary>(response, 'socialWorkers');
+      setSocialWorkers(list.map((worker) => ({ id: worker.id, fullName: worker.fullName })));
+    } catch (error) {
+      setSocialWorkersError(error instanceof Error ? error.message : 'Unable to load social workers.');
+      throw error;
+    } finally {
+      setSocialWorkersLoading(false);
+    }
+  }, [currentUser]);
 
   const refreshChildLinkRequests = useCallback(async () => {
     if (!currentUser || currentUser.role !== 'PARENT_CAREGIVER') {
@@ -215,6 +249,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Administrators read everything through /api/admin; there is no family data to load for them.
+    if (currentUser.role === 'ADMIN') {
+      setChildrenLoading(false);
+      setChildrenError(null);
+      return;
+    }
+
     setChildrenLoading(true);
     setChildrenError(null);
     try {
@@ -233,6 +274,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         createdBy: item.createdBy,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
+        socialWorker: item.socialWorker ?? null,
       }));
       const relationships = body.children.flatMap((item) => item.relationships ?? []);
 
@@ -285,7 +327,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // after the signed-in user changed (or after a newer request started) are ignored.
   const refreshMaintenanceData = useCallback(async () => {
     const requestId = ++maintenanceRequest.current;
-    if (!currentUser) {
+    if (!currentUser || currentUser.role === 'ADMIN') {
       setDashboardSummary(null);
       setMaintenanceLoading(false);
       setMaintenanceError(null);
@@ -357,7 +399,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refreshMaintenanceData().catch(() => {
       // The error is already stored for the maintenance data.
     });
-  }, [authLoading, currentUser, refreshFamilyData, refreshMaintenanceData]);
+    void refreshSocialWorkers().catch(() => {
+      // The error is already stored for the social worker list.
+    });
+  }, [authLoading, currentUser, refreshFamilyData, refreshMaintenanceData, refreshSocialWorkers]);
 
   const commit = (updater: (prev: AppDatabaseState) => AppDatabaseState) => {
     setDb((prev) => {
@@ -406,6 +451,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refreshFamilyData();
   };
 
+  const assignSocialWorker: DataContextValue['assignSocialWorker'] = async (childId, socialWorkerId) => {
+    await sendJson(`/parent/children/${encodeURIComponent(childId)}/social-worker`, 'PUT', { socialWorkerId });
+    await Promise.all([refreshFamilyData(), refreshMaintenanceData()]);
+  };
+
   const requestChildLink: DataContextValue['requestChildLink'] = async (southAfricanId, relationshipType) => {
     const response = await apiFetch('/parent/children/link-requests', {
       method: 'POST',
@@ -438,8 +488,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       startDate: input.startDate,
       endDate: input.endDate || undefined,
       notes: input.notes?.trim() || undefined,
+      socialWorkerId: input.socialWorkerId || undefined,
     });
-    await refreshMaintenanceData();
+    // A new assignment (when the child had no worker) must show on the child as well.
+    await Promise.all([refreshMaintenanceData(), refreshFamilyData()]);
   };
 
   const updateArrangement: DataContextValue['updateArrangement'] = async (arrangementId, updates) => {
@@ -594,12 +646,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         maintenanceError,
         dashboardSummary,
         pendingChildLinkRequests,
+        socialWorkers,
+        socialWorkersLoading,
+        socialWorkersError,
+        refreshSocialWorkers,
         refreshFamilyData,
         refreshMaintenanceData,
         refreshChildLinkRequests,
         updateUserProfile,
         addChild,
         updateChild,
+        assignSocialWorker,
         requestChildLink,
         respondToChildLinkRequest,
         addArrangement,

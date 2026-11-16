@@ -22,10 +22,11 @@ function migrateDemoData(raw: string): Partial<AppDatabaseState> {
   }) as Partial<AppDatabaseState>;
 }
 
-// Arrangements, payments and evidence live in the backend database, never in this browser.
+// Arrangements, payments, evidence and social worker assignments live in the backend database,
+// never in this browser.
 function freshDemoData(): AppDatabaseState {
   const seed = migrateDemoData(JSON.stringify(SEED_DATA)) as AppDatabaseState;
-  return { ...seed, arrangements: [], payments: [], evidence: [] };
+  return { ...seed, arrangements: [], payments: [], evidence: [], assignments: [] };
 }
 
 export function loadDatabase(): AppDatabaseState {
@@ -47,7 +48,7 @@ export function loadDatabase(): AppDatabaseState {
       arrangements: [],
       payments: [],
       evidence: [],
-      assignments: parsed.assignments ?? seed.assignments,
+      assignments: [],
       reviews: parsed.reviews ?? seed.reviews,
       professionalNotes: parsed.professionalNotes ?? seed.professionalNotes,
       concerns: parsed.concerns ?? seed.concerns,
@@ -71,6 +72,7 @@ export function saveDatabase(state: AppDatabaseState): void {
     arrangements: [],
     payments: [],
     evidence: [],
+    assignments: [],
   }));
 }
 
