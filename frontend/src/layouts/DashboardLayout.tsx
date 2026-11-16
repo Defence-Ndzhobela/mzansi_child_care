@@ -10,9 +10,11 @@ import {
   FileSpreadsheet,
   History,
   LayoutDashboard,
+  Link2,
   LogOut,
   Menu,
   Settings,
+  UserCog,
   Users,
   X,
 } from 'lucide-react';
@@ -37,6 +39,25 @@ export function DashboardLayout() {
   if (!currentUser) return null;
 
   const isSocialWorker = currentUser.role === 'SOCIAL_WORKER';
+  const isAdmin = currentUser.role === 'ADMIN';
+
+  const adminNav: NavItem[] = [
+    { to: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+    { to: '/admin/social-workers', label: 'Social Workers', icon: <UserCog className="h-4 w-4" /> },
+    { to: '/admin/child-supporters', label: 'Child Supporters', icon: <Users className="h-4 w-4" /> },
+    { to: '/admin/children', label: 'Children', icon: <Baby className="h-4 w-4" /> },
+    {
+      to: '/admin/maintenance-arrangements',
+      label: 'Maintenance Arrangements',
+      icon: <ClipboardList className="h-4 w-4" />,
+    },
+    {
+      to: '/admin/assignments',
+      label: 'Social Worker Assignments',
+      icon: <Link2 className="h-4 w-4" />,
+    },
+    { to: '/admin/reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4" /> },
+  ];
 
   const parentNav: NavItem[] = [
     { to: '/parent/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -90,7 +111,7 @@ export function DashboardLayout() {
     },
   ];
 
-  const navItems = isSocialWorker ? socialWorkerNav : parentNav;
+  const navItems = isAdmin ? adminNav : isSocialWorker ? socialWorkerNav : parentNav;
   const userNotifications = db.notifications
     .filter((n) => n.userId === currentUser.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -142,7 +163,7 @@ export function DashboardLayout() {
 
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#006847]">
-            {isSocialWorker ? 'Social Worker Portal' : 'Parent / Caregiver Portal'}
+            {isAdmin ? 'Administrator Portal' : isSocialWorker ? 'Social Worker Portal' : 'Parent / Caregiver Portal'}
           </p>
           <p className="mt-0.5 text-sm font-semibold text-[#0F2942] truncate">
             {currentUser.fullName}

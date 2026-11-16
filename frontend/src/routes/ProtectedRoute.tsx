@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 import { apiFetch } from '../services/apiClient';
+import { dashboardPathFor, roleCheckPathFor } from '../utils/roles';
 
 interface ProtectedRouteProps {
   allowedRole: UserRole;
@@ -22,7 +23,7 @@ export function ProtectedRoute({ allowedRole, children }: ProtectedRouteProps) {
     setAccess(null);
     if (!currentUser || currentUser.role !== allowedRole) return () => { active = false; };
     const userId = currentUser.id;
-    const path = allowedRole === 'SOCIAL_WORKER' ? '/social-worker/me' : '/parent/me';
+    const path = roleCheckPathFor(allowedRole);
     apiFetch(path)
       .then((response) => {
         if (active) setAccess({
@@ -43,11 +44,7 @@ export function ProtectedRoute({ allowedRole, children }: ProtectedRouteProps) {
   }
 
   if (currentUser.role !== allowedRole) {
-    const fallback =
-      currentUser.role === 'SOCIAL_WORKER'
-        ? '/social-worker/dashboard'
-        : '/parent/dashboard';
-    return <Navigate to={fallback} replace />;
+    return <Navigate to={dashboardPathFor(currentUser.role)} replace />;
   }
 
   if (!access || access.userId !== currentUser.id || access.role !== allowedRole) return <p>Checking access...</p>;

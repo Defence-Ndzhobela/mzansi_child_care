@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { dashboardPathFor } from '../../utils/roles';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -30,11 +31,7 @@ export function LoginPage() {
       return;
     }
 
-    if (res.user.role === 'SOCIAL_WORKER') {
-      navigate('/social-worker/dashboard');
-    } else {
-      navigate('/parent/dashboard');
-    }
+    navigate(dashboardPathFor(res.user.role));
   };
 
   const fillDemo = (demoEmail: string, demoPassword: string) => {

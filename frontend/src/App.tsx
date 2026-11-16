@@ -3,6 +3,13 @@ import { AuthProvider } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { PublicLayout } from './layouts/PublicLayout';
+import { AdminArrangements } from './pages/admin/AdminArrangements';
+import { AdminAssignments } from './pages/admin/AdminAssignments';
+import { AdminChildren } from './pages/admin/AdminChildren';
+import { AdminChildSupporters } from './pages/admin/AdminChildSupporters';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
+import { AdminReports } from './pages/admin/AdminReports';
+import { AdminSocialWorkers } from './pages/admin/AdminSocialWorkers';
 import { ArrangementsPage } from './pages/parent/ArrangementsPage';
 import { ChildrenPage } from './pages/parent/ChildrenPage';
 import { ParentDashboard } from './pages/parent/ParentDashboard';
@@ -74,6 +81,24 @@ export default function App() {
               <Route path="concerns" element={<PaymentConcernsPage />} />
               <Route path="reports" element={<SocialWorkerReportsPage />} />
               <Route path="profile" element={<SocialWorkerProfilePage />} />
+            </Route>
+
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRole="ADMIN">
+                  <DashboardLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/admin/dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="social-workers" element={<AdminSocialWorkers />} />
+              <Route path="child-supporters" element={<AdminChildSupporters />} />
+              <Route path="children" element={<AdminChildren />} />
+              <Route path="maintenance-arrangements" element={<AdminArrangements />} />
+              <Route path="assignments" element={<AdminAssignments />} />
+              <Route path="reports" element={<AdminReports />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

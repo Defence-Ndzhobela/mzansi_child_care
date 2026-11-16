@@ -2,15 +2,13 @@ import React, { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { dashboardPathFor } from '../utils/roles';
 
 export function PublicLayout() {
   const { currentUser } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const dashboardPath =
-    currentUser?.role === 'SOCIAL_WORKER'
-      ? '/social-worker/dashboard'
-      : '/parent/dashboard';
+  const dashboardPath = dashboardPathFor(currentUser?.role);
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `text-sm font-medium whitespace-nowrap shrink-0 transition-colors ${

@@ -1,13 +1,11 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { dashboardPathFor } from '../../utils/roles';
 
 export function LandingPage() {
   const { currentUser } = useAuth();
-  const dashboardPath =
-    currentUser?.role === 'SOCIAL_WORKER'
-      ? '/social-worker/dashboard'
-      : '/parent/dashboard';
+  const dashboardPath = dashboardPathFor(currentUser?.role);
 
   return (
     <div>
