@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { apiAs, otherParent, parent, syntheticId, useTestServer } = require("./helpers/testApp");
+const { apiAs, otherParent, parent, socialWorker, syntheticId, useTestServer } = require("./helpers/testApp");
 
 const server = useTestServer();
 const asCreator = apiAs(server, parent.id);
@@ -14,6 +14,7 @@ test("linking needs the creator's approval before a second parent gains access",
   await asCreator("/api/parent/children", post({
     firstName: "Defence", lastName: "Example", dateOfBirth: "2020-01-01",
     southAfricanId: idNumber, relationshipType: "MOTHER", isPrimaryCaregiver: true,
+    socialWorkerId: socialWorker.id,
   }));
 
   const request = await asRequester("/api/parent/children/link-requests", post({
@@ -42,6 +43,8 @@ test("linking needs the creator's approval before a second parent gains access",
   assert.equal(shared.length, 1);
   assert.equal(shared[0].firstName, "Defence");
   assert.equal(shared[0].relationships.length, 2);
+  // Approval gives the second parent the child's existing social worker, not a new assignment.
+  assert.equal(shared[0].socialWorker.id, socialWorker.id);
 
   const again = await asCreator(`/api/parent/child-link-requests/${requestId}/respond`, decision("REJECTED"));
   assert.equal(again.status, 404);

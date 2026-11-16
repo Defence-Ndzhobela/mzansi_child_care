@@ -34,6 +34,20 @@ const socialWorker = {
   role: "SOCIAL_WORKER",
   account_status: "ACTIVE",
 };
+const otherSocialWorker = {
+  id: "88888888-8888-4888-8888-888888888802",
+  full_name: "Second Worker",
+  email: "worker2@demo.co.za",
+  role: "SOCIAL_WORKER",
+  account_status: "ACTIVE",
+};
+const inactiveSocialWorker = {
+  id: "88888888-8888-4888-8888-888888888803",
+  full_name: "Inactive Worker",
+  email: "inactive@demo.co.za",
+  role: "SOCIAL_WORKER",
+  account_status: "INACTIVE",
+};
 
 // In-memory stand-in for the Neon database, keyed on the SQL each service sends.
 const state = {
@@ -41,11 +55,15 @@ const state = {
   children: new Map(),
   childRelationships: new Map(),
   linkRequests: new Map(),
+  // child id -> social worker id of the ACTIVE assignment
+  assignments: new Map(),
   failInsert: false,
 };
 
+const isActiveWorker = (id) => [socialWorker, otherSocialWorker].some((worker) => worker.id === id);
+
 async function fakeSql(strings, ...values) {
-  const { registered, children, childRelationships, linkRequests } = state;
+  const { registered, children, childRelationships, linkRequests, assignments } = state;
   const query = strings.join("?");
   if (query.includes("SELECT version()")) return [{ version: "PostgreSQL" }];
   if (query.includes("WHERE lower(email)")) {
@@ -74,13 +92,13 @@ async function fakeSql(strings, ...values) {
     return [created];
   }
   if (query.includes("WITH existing_child AS")) {
-    const [idHash, firstName, lastName, dateOfBirth, createdBy, , , relationshipType, isPrimary] = values;
+    const [idHash, socialWorkerId, firstName, lastName, dateOfBirth, createdBy, lookupHash, , relationshipType, isPrimary] = values;
     const existing = [...children.values()].find((child) => child.national_id_lookup_hash === idHash);
     if (existing) {
       const alreadyLinked = existing.created_by === createdBy ||
         (childRelationships.get(existing.id) || []).some((rel) => rel.userId === createdBy);
       if (!alreadyLinked) {
-        linkRequests.set("duplicate-id-request", {
+        linkRequests.set("66666666-6666-4666-8666-666666666602", {
           id: "66666666-6666-4666-8666-666666666602",
           childId: existing.id,
           requesterId: createdBy,
@@ -91,6 +109,8 @@ async function fakeSql(strings, ...values) {
       }
       return [{ accepted: true }];
     }
+    // The real statement creates nothing at all when the worker is not an active social worker.
+    if (!isActiveWorker(socialWorkerId)) return [{ accepted: true }];
     const child = {
       id: "44444444-4444-4444-8444-444444444401",
       first_name: firstName,
@@ -99,9 +119,10 @@ async function fakeSql(strings, ...values) {
       created_by: createdBy,
       created_at: "2026-11-15T00:00:00.000Z",
       updated_at: "2026-11-15T00:00:00.000Z",
-      national_id_lookup_hash: values[5],
+      national_id_lookup_hash: lookupHash,
     };
     children.set(child.id, child);
+    assignments.set(child.id, socialWorkerId);
     childRelationships.set(child.id, [{
       id: "55555555-5555-4555-8555-555555555501",
       userId: createdBy,
@@ -113,13 +134,27 @@ async function fakeSql(strings, ...values) {
     }]);
     return [{ accepted: true }];
   }
+  if (query.includes("ORDER BY full_name")) {
+    return [socialWorker, otherSocialWorker].map(({ id, full_name }) => ({ id, full_name }));
+  }
+  if (query.trim().startsWith("SELECT id FROM users") && query.includes("role = 'SOCIAL_WORKER'")) {
+    return isActiveWorker(values[0]) ? [{ id: values[0] }] : [];
+  }
   if (query.includes("SELECT c.id, c.first_name")) {
     const [role, userId] = values;
+    const workers = [socialWorker, otherSocialWorker];
     return [...children.values()]
       .filter((child) => role === "PARENT_CAREGIVER"
         ? child.created_by === userId || (childRelationships.get(child.id) || []).some((rel) => rel.userId === userId)
-        : false)
-      .map((child) => ({ ...child, relationships: childRelationships.get(child.id) || [] }));
+        : assignments.get(child.id) === userId)
+      .map((child) => {
+        const worker = workers.find((item) => item.id === assignments.get(child.id));
+        return {
+          ...child,
+          social_worker: worker ? { id: worker.id, fullName: worker.full_name } : null,
+          relationships: childRelationships.get(child.id) || [],
+        };
+      });
   }
   if (query.includes("UPDATE children")) {
     const [firstName, lastName, dateOfBirth, childId, userId] = values;
@@ -184,7 +219,7 @@ async function fakeSql(strings, ...values) {
     return [{ child_id: child.id, status: request.status }];
   }
   if (query.includes("WHERE id")) {
-    return [parent, otherParent, thirdParent, socialWorker, ...registered.values()]
+    return [parent, otherParent, thirdParent, socialWorker, otherSocialWorker, inactiveSocialWorker, ...registered.values()]
       .filter((item) => item.id === values[0]);
   }
   throw new Error("Unexpected query");
@@ -232,6 +267,6 @@ function syntheticId(prefix = "200101500908") {
 }
 
 module.exports = {
-  apiAs, otherParent, parent, secret, socialWorker, state, syntheticId,
-  thirdParent, tokenFor, useTestServer,
+  apiAs, inactiveSocialWorker, otherParent, otherSocialWorker, parent, secret, socialWorker, state,
+  syntheticId, thirdParent, tokenFor, useTestServer,
 };
