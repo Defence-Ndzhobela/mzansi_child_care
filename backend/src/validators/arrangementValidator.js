@@ -4,7 +4,7 @@ const { parseAmount } = require("../utils/money");
 const { hasOnlyAllowedKeys, isIsoDate, isPlainText, isUuid } = require("../utils/validationHelpers");
 
 const ROLES = ["PAYING", "RECEIVING"];
-const CREATE_KEYS = ["childId", "myRole", "otherUserId", "expectedAmount", "frequency", "startDate", "endDate", "notes"];
+const CREATE_KEYS = ["childId", "myRole", "otherUserId", "expectedAmount", "frequency", "startDate", "endDate", "notes", "socialWorkerId"];
 const UPDATE_KEYS = ["expectedAmount", "frequency", "startDate", "endDate", "status", "notes"];
 const BAD_REQUEST = "Check the arrangement details and try again.";
 
@@ -41,11 +41,14 @@ function validateCreateArrangement(req, _res, next) {
   }
   const { error, terms } = parseTerms(body);
   if (error) return next(new ApiError(400, error));
+  const hasWorker = body.socialWorkerId !== undefined && body.socialWorkerId !== null && body.socialWorkerId !== "";
+  if (hasWorker && !isUuid(body.socialWorkerId)) return next(new ApiError(400, "Select an available social worker."));
 
   req.validated = {
     childId: body.childId,
     myRole: body.myRole,
     otherUserId: body.otherUserId,
+    socialWorkerId: hasWorker ? body.socialWorkerId : null,
     ...terms,
   };
   return next();
