@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
+import { AuthSplitLayout } from '../../components/AuthSplitLayout';
+import { IMAGES } from '../../config/images';
 import { useAuth } from '../../context/AuthContext';
 import { dashboardPathFor } from '../../utils/roles';
 
@@ -41,10 +43,16 @@ export function LoginPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
-        <div className="md:col-span-6">
+    <AuthSplitLayout
+      image={IMAGES.socialWorker}
+      imagePosition="72% center"
+      headline="Support you can trust, for every family"
+      text="Parents, caregivers and social workers keep child maintenance records clear and shared."
+    >
+      <div>
+        <div>
           <h1 className="font-display text-2xl font-bold text-[#0F2942]">Sign in</h1>
+          <p className="mt-1 text-sm text-slate-600">Welcome back. Sign in to continue.</p>
 
           <form
             onSubmit={handleSubmit}
@@ -111,7 +119,7 @@ export function LoginPage() {
           </form>
         </div>
 
-        <div className="md:col-span-6 space-y-4">
+        <div className="mt-6 space-y-4">
           <div className="border border-slate-200 bg-slate-50 p-4 rounded-sm">
             <h2 className="font-display text-base font-semibold text-[#0F2942]">Demo accounts</h2>
             <p className="mt-1 text-xs text-slate-600">
@@ -170,6 +178,6 @@ export function LoginPage() {
           </div>
         </div>
       </div>
-    </div>
+    </AuthSplitLayout>
   );
 }

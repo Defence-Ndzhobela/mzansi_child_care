@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
+import { AuthSplitLayout } from '../../components/AuthSplitLayout';
+import { IMAGES } from '../../config/images';
 import { apiFetch } from '../../services/apiClient';
 
 export function RegisterPage() {
@@ -59,10 +61,20 @@ export function RegisterPage() {
 
   const inputClass = 'mt-1 block w-full rounded-sm border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none';
   return (
-    <div className="mx-auto max-w-xl px-4 py-12 sm:px-6">
-      <h1 className="font-display text-2xl font-bold text-[#0F2942]">Create account</h1>
-      <p className="mt-2 text-sm text-slate-600">Create a parent or caregiver account to sign in.</p>
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4 rounded-sm border border-slate-200 bg-white p-6">
+    <AuthSplitLayout
+      image={IMAGES.parentAndChild}
+      imagePosition="60% center"
+      headline="Every child deserves care, protection and support"
+      text="Create an account to keep arrangements, payments and confirmations in one place."
+    >
+      <div>
+        <h1 className="font-display text-2xl font-bold text-[#0F2942]">Create account</h1>
+        <p className="mt-2 text-sm text-slate-600">Create a parent or caregiver account to sign in.</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Social workers are registered by a Mzansi ChildCare administrator and sign in with the account they were given.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-sm border border-slate-200 bg-white p-6">
         {error && (
           <div role="alert" className="flex items-start gap-2 rounded-sm border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-800">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -105,6 +117,6 @@ export function RegisterPage() {
           <Link to="/login" className="font-semibold text-[#006847] hover:underline">Sign in</Link>
         </p>
       </form>
-    </div>
+    </AuthSplitLayout>
   );
 }
