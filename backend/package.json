@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node server.js",
     "db:migrate": "node database/migrate.js",
-    "test": "node --test tests/auth.test.js tests/child.test.js tests/family.test.js tests/encryptIdNumber.test.js tests/env.test.js tests/cors.test.js tests/maintenanceRules.test.js tests/maintenance.integration.test.js"
+    "admin:seed": "node database/seedAdmin.js",
+    "test": "node --test tests/auth.test.js tests/child.test.js tests/family.test.js tests/encryptIdNumber.test.js tests/env.test.js tests/cors.test.js tests/maintenanceRules.test.js tests/maintenance.integration.test.js tests/assignment.integration.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",

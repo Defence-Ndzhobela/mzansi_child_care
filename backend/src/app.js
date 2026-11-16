@@ -2,7 +2,9 @@ const express = require("express");
 const { getDatabaseVersion } = require("./config/database");
 const { assertValidJwtSecret } = require("./config/env");
 const { createAuthController } = require("./controllers/authController");
+const { createAdminController } = require("./controllers/adminController");
 const { createArrangementController } = require("./controllers/arrangementController");
+const { createAssignmentController } = require("./controllers/assignmentController");
 const { createChildController } = require("./controllers/childController");
 const { createFamilyController } = require("./controllers/familyController");
 const { createPaymentController } = require("./controllers/paymentController");
@@ -11,13 +13,19 @@ const { createAuthenticate } = require("./middleware/authMiddleware");
 const { createCorsMiddleware } = require("./middleware/corsMiddleware");
 const { errorMiddleware } = require("./middleware/errorMiddleware");
 const { createChildIdRateLimit } = require("./middleware/rateLimitMiddleware");
+const { createAdminRoutes } = require("./routes/adminRoutes");
 const { createArrangementRoutes } = require("./routes/arrangementRoutes");
+const { createAssignmentRoutes } = require("./routes/assignmentRoutes");
 const { createAuthRoutes } = require("./routes/authRoutes");
 const { createChildRoutes } = require("./routes/childRoutes");
 const { createFamilyRoutes } = require("./routes/familyRoutes");
 const { createPaymentRoutes } = require("./routes/paymentRoutes");
 const { createSocialWorkerRoutes } = require("./routes/socialWorkerRoutes");
+const { createAdminAssignmentService } = require("./services/adminAssignmentService");
+const { createAdminDirectoryService } = require("./services/adminDirectoryService");
+const { createAdminSocialWorkerService } = require("./services/adminSocialWorkerService");
 const { createArrangementService } = require("./services/arrangementService");
+const { createAssignmentService } = require("./services/assignmentService");
 const { createAuthService } = require("./services/authService");
 const { createChildService } = require("./services/childService");
 const { createFamilyService } = require("./services/familyService");
@@ -32,10 +40,17 @@ function createApp({
   assertValidJwtSecret(jwtSecret);
 
   const authService = createAuthService({ sql, jwtSecret });
-  const childService = createChildService({ sql, jwtSecret });
+  const assignmentService = createAssignmentService({ sql });
+  const childService = createChildService({ sql, jwtSecret, assignmentService });
   const familyService = createFamilyService({ sql, jwtSecret });
-  const arrangementService = createArrangementService({ sql });
+  const arrangementService = createArrangementService({ sql, assignmentService });
   const paymentService = createPaymentService({ sql, arrangementService });
+  const adminAssignmentService = createAdminAssignmentService({ sql });
+  const adminController = createAdminController({
+    socialWorkerService: createAdminSocialWorkerService({ sql }),
+    assignmentService: adminAssignmentService,
+    directoryService: createAdminDirectoryService({ sql, assignmentService: adminAssignmentService }),
+  });
 
   const authenticate = createAuthenticate(authService);
   const childIdRateLimit = createChildIdRateLimit();
@@ -71,10 +86,15 @@ function createApp({
     arrangementController: createArrangementController({ arrangementService }),
     authenticate,
   }));
+  app.use("/api/parent", createAssignmentRoutes({
+    assignmentController: createAssignmentController({ assignmentService, childService }),
+    authenticate,
+  }));
   app.use("/api/parent", createPaymentRoutes({
     paymentController: createPaymentController({ paymentService }),
     authenticate,
   }));
+  app.use("/api/admin", createAdminRoutes({ adminController, authenticate }));
   app.use("/api/social-worker", createSocialWorkerRoutes({
     socialWorkerController: createSocialWorkerController({ childService, arrangementService, paymentService }),
     authenticate,
