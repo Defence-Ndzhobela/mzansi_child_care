@@ -1,4 +1,7 @@
 import { Link } from 'react-router-dom';
+import { GovernmentBranding } from '../../components/GovernmentBranding';
+import { PhotoFrame } from '../../components/PhotoFrame';
+import { IMAGES } from '../../config/images';
 
 export function AboutPage() {
   return (
@@ -9,7 +12,24 @@ export function AboutPage() {
         confirmations in one place.
       </p>
 
+      <PhotoFrame
+        image={IMAGES.communityDevelopment}
+        position="center 35%"
+        priority
+        className="mt-8 aspect-[16/9] w-full sm:aspect-[2/1]"
+        caption="Communities and families working together for children."
+      />
+
       <div className="mt-8 space-y-6 border-t border-slate-200 pt-6">
+        <div>
+          <h2 className="font-display text-xl font-semibold text-[#0F2942]">Who we serve</h2>
+          <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            Mzansi ChildCare is for every South African family. Black, Coloured, Indian and White families, and all
+            other communities, have the same access to the platform and the same right to care, protection and
+            support for their children.
+          </p>
+        </div>
+
         <div>
           <h2 className="font-display text-xl font-semibold text-[#0F2942]">Features</h2>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700">
@@ -18,6 +38,28 @@ export function AboutPage() {
             <li>View and export payment reports.</li>
             <li>Review assigned cases and add social worker notes.</li>
           </ul>
+        </div>
+
+        <section className="flex flex-col overflow-hidden rounded-md border border-slate-200 bg-slate-50 shadow-sm sm:flex-row">
+          <PhotoFrame
+            image={IMAGES.socialWorker}
+            position="72% center"
+            bare
+            className="h-44 shrink-0 sm:h-auto sm:w-56"
+          />
+          <div className="p-5">
+            <h2 className="font-display text-lg font-semibold text-[#0F2942]">For social workers</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-700">
+              Social workers are registered by a Mzansi ChildCare administrator. Once your account is created you
+              will see the children and families assigned to you, review their payment records and add professional
+              notes.
+            </p>
+          </div>
+        </section>
+
+        <div>
+          <h2 className="font-display text-xl font-semibold text-[#0F2942]">Independence</h2>
+          <GovernmentBranding className="mt-3" />
         </div>
 
         <div className="pt-2">

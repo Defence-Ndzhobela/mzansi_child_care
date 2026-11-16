@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import { PhotoFrame } from '../../components/PhotoFrame';
+import { IMAGES } from '../../config/images';
 
 export function HowItWorksPage() {
   const steps = [
@@ -50,6 +52,14 @@ export function HowItWorksPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
       <h1 className="font-display text-3xl font-bold text-[#0F2942]">How it works</h1>
+
+      <PhotoFrame
+        image={IMAGES.socialWorkerHelpingMother}
+        position="center 30%"
+        priority
+        className="mt-6 aspect-[16/9] w-full sm:aspect-[3/1]"
+        caption="Social workers support families every step of the way."
+      />
 
       <div className="mt-8 space-y-4">
         {steps.map((step) => (

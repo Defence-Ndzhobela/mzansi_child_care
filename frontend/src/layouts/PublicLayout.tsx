@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
+import { GovernmentBranding } from '../components/GovernmentBranding';
 import { useAuth } from '../context/AuthContext';
 import { dashboardPathFor } from '../utils/roles';
 
 export function PublicLayout() {
   const { currentUser } = useAuth();
+  const { pathname } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // The sign in and register cards already carry the government/independence notice.
+  const isAuthPage = pathname === '/login' || pathname === '/register';
 
   const dashboardPath = dashboardPathFor(currentUser?.role);
 
@@ -146,23 +151,25 @@ export function PublicLayout() {
       </main>
 
       <footer className="border-t border-slate-200 bg-slate-50">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-5 text-xs text-slate-600 sm:px-6">
-          <Link to="/" className="font-display font-semibold text-[#0F2942]">
-            Mzansi ChildCare
-          </Link>
-          <nav className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Footer navigation">
-            <Link to="/about" className="hover:underline">
-              About
+        <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 text-xs text-slate-600 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <Link to="/" className="font-display font-semibold text-[#0F2942]">
+              Mzansi ChildCare
             </Link>
-            <Link to="/how-it-works" className="hover:underline">
-              How it works
-            </Link>
-            <Link to="/contact" className="hover:underline">
-              Contact
-            </Link>
-          </nav>
-          <p>Mzansi ChildCare is an independent community initiative.</p>
-          <span>© 2026 Mzansi ChildCare</span>
+            <nav className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Footer navigation">
+              <Link to="/about" className="hover:underline">
+                About
+              </Link>
+              <Link to="/how-it-works" className="hover:underline">
+                How it works
+              </Link>
+              <Link to="/contact" className="hover:underline">
+                Contact
+              </Link>
+            </nav>
+            <span>© 2026 Mzansi ChildCare</span>
+          </div>
+          {!isAuthPage && <GovernmentBranding className="max-w-2xl border-t border-slate-200 pt-4" />}
         </div>
       </footer>
     </div>
