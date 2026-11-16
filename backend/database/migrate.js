@@ -9,13 +9,54 @@ const BASELINE_VERSION = "001_initial_schema";
 // schema_migrations as history, and the renamed migration counts as applied.
 const LEGACY_VERSIONS = { "002_child_linking": "001_child_linking" };
 
+// Splits a migration into statements on ";" while keeping dollar-quoted bodies
+// (DO $$ ... $$) and single-quoted strings intact. Whole-line "--" comments are dropped.
+function splitStatements(sqlText) {
+  const text = sqlText.replace(/^\s*--.*$/gm, "");
+  const statements = [];
+  let current = "";
+  let dollarTag = null;
+  let inString = false;
+
+  for (let index = 0; index < text.length;) {
+    const character = text[index];
+    if (dollarTag) {
+      if (text.startsWith(dollarTag, index)) {
+        current += dollarTag;
+        index += dollarTag.length;
+        dollarTag = null;
+      } else {
+        current += text[index++];
+      }
+      continue;
+    }
+    if (inString) {
+      if (character === "'") inString = false;
+      current += text[index++];
+      continue;
+    }
+    const tag = character === "$" ? /^\$[A-Za-z_]*\$/.exec(text.slice(index, index + 64)) : null;
+    if (tag) {
+      dollarTag = tag[0];
+      current += dollarTag;
+      index += dollarTag.length;
+    } else if (character === "'") {
+      inString = true;
+      current += text[index++];
+    } else if (character === ";") {
+      statements.push(current);
+      current = "";
+      index += 1;
+    } else {
+      current += text[index++];
+    }
+  }
+  statements.push(current);
+  return statements.map((statement) => statement.trim()).filter(Boolean);
+}
+
 function readStatements(version) {
-  const sqlText = fs.readFileSync(path.join(MIGRATIONS_DIR, `${version}.sql`), "utf8");
-  return sqlText
-    .replace(/^\s*--.*$/gm, "")
-    .split(";")
-    .map((statement) => statement.trim())
-    .filter(Boolean);
+  return splitStatements(fs.readFileSync(path.join(MIGRATIONS_DIR, `${version}.sql`), "utf8"));
 }
 
 async function main() {
@@ -71,4 +112,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, splitStatements };

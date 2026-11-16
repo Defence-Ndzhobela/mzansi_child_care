@@ -1,13 +1,15 @@
 -- ============================================================================
--- MZANSI CHILDCARE — POSTGRESQL DATABASE SCHEMA (10 APPLICATION TABLES)
+-- MZANSI CHILDCARE — POSTGRESQL DATABASE SCHEMA (11 APPLICATION TABLES)
 -- ============================================================================
 -- Purpose: Backend database design for tracking child maintenance
 --          arrangements, payment submissions, recipient confirmations,
 --          payment evidence metadata, and social worker case reviews.
 -- Currency: South African Rand (ZAR) stored as DECIMAL(12,2).
--- Note:    Authentication and child profiles/linking use this database. The
---          arrangement, payment and evidence tables are not yet used by the API;
---          the dashboard still keeps those records as localStorage demo data.
+-- Note:    Authentication, child profiles/linking, maintenance arrangements,
+--          payments, confirmations and evidence metadata all use this database
+--          through the API. Social worker reviews and notes are still frontend
+--          demo data. This file shows the final schema: existing databases get
+--          changes through database/migrations (003_payment_persistence.sql).
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -140,17 +142,22 @@ CREATE TABLE maintenance_arrangements (
     end_date            DATE,
     status              VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
                         CHECK (status IN ('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED')),
+    notes               TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_different_parties CHECK (paying_user_id <> receiving_user_id),
     CONSTRAINT chk_valid_date_range CHECK (end_date IS NULL OR end_date >= start_date),
-    CONSTRAINT uq_arrangement_id_child UNIQUE (id, child_id)
+    CONSTRAINT uq_arrangement_id_child UNIQUE (id, child_id),
+    CONSTRAINT uq_arrangement_parties UNIQUE (id, paying_user_id, receiving_user_id)
 );
 
 CREATE INDEX idx_arrangements_child ON maintenance_arrangements(child_id);
 CREATE INDEX idx_arrangements_paying_user ON maintenance_arrangements(paying_user_id);
 CREATE INDEX idx_arrangements_receiving_user ON maintenance_arrangements(receiving_user_id);
 CREATE INDEX idx_arrangements_status ON maintenance_arrangements(status);
+CREATE UNIQUE INDEX uq_active_arrangement_parties
+    ON maintenance_arrangements (child_id, paying_user_id, receiving_user_id)
+    WHERE status = 'ACTIVE';
 
 -- ----------------------------------------------------------------------------
 -- 6. PAYMENTS
@@ -195,7 +202,13 @@ CREATE TABLE payments (
     CONSTRAINT fk_payment_arrangement_child
         FOREIGN KEY (arrangement_id, child_id)
         REFERENCES maintenance_arrangements(id, child_id)
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+    -- A payment always carries the paying and receiving users of its arrangement.
+    CONSTRAINT fk_payment_arrangement_parties
+        FOREIGN KEY (arrangement_id, paying_user_id, receiving_user_id)
+        REFERENCES maintenance_arrangements(id, paying_user_id, receiving_user_id)
+        ON DELETE RESTRICT,
+    CONSTRAINT uq_payment_id_receiver UNIQUE (id, receiving_user_id)
 );
 
 CREATE INDEX idx_payments_arrangement ON payments(arrangement_id);
@@ -208,20 +221,48 @@ CREATE INDEX idx_payments_status ON payments(status);
 -- ----------------------------------------------------------------------------
 -- 7. PAYMENT_EVIDENCE
 -- Keeps payment evidence metadata separate from payment records.
--- Uploaded files live in object storage; only metadata and file_url are stored.
+-- Uploaded files are not stored yet; only metadata and a storage_key reference are kept.
 -- ----------------------------------------------------------------------------
 CREATE TABLE payment_evidence (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     payment_id      UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
     uploaded_by     UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     file_name       VARCHAR(255) NOT NULL,
-    file_url        TEXT NOT NULL,
+    storage_key     TEXT NOT NULL,
+    file_type       VARCHAR(100),
+    file_size_label VARCHAR(30),
     description     TEXT,
     uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_evidence_payment ON payment_evidence(payment_id);
 CREATE INDEX idx_evidence_uploaded_by ON payment_evidence(uploaded_by);
+
+-- ----------------------------------------------------------------------------
+-- 7b. PAYMENT_CONFIRMATIONS
+-- The receiving parent's single decision on a payment: confirmed in full,
+-- partially confirmed, or disputed (a reason is required). The composite key
+-- means only the payment's receiving user can be stored as the decision maker.
+-- ----------------------------------------------------------------------------
+CREATE TABLE payment_confirmations (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id          UUID NOT NULL,
+    decided_by          UUID NOT NULL,
+    decision            VARCHAR(20) NOT NULL
+                        CHECK (decision IN ('CONFIRMED_FULL', 'CONFIRMED_PARTIAL', 'DISPUTED')),
+    confirmed_amount    DECIMAL(12,2) NOT NULL CHECK (confirmed_amount >= 0),
+    note                TEXT,
+    decided_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_payment_confirmations_payment UNIQUE (payment_id),
+    CONSTRAINT fk_confirmation_payment_receiver
+        FOREIGN KEY (payment_id, decided_by)
+        REFERENCES payments (id, receiving_user_id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_dispute_has_reason
+        CHECK (decision <> 'DISPUTED' OR char_length(trim(COALESCE(note, ''))) > 0)
+);
+
+CREATE INDEX idx_payment_confirmations_decided_by ON payment_confirmations (decided_by);
 
 -- ----------------------------------------------------------------------------
 -- 8. SOCIAL_WORKER_ASSIGNMENTS

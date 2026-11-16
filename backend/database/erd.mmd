@@ -67,9 +67,21 @@ erDiagram
         uuid payment_id FK
         uuid uploaded_by FK
         varchar file_name
-        text file_url
+        text storage_key
+        varchar file_type
+        varchar file_size_label
         text description
         timestamptz uploaded_at
+    }
+
+    PAYMENT_CONFIRMATIONS {
+        uuid id PK
+        uuid payment_id FK
+        uuid decided_by FK
+        varchar decision
+        decimal confirmed_amount
+        text note
+        timestamptz decided_at
     }
 
     SOCIAL_WORKER_ASSIGNMENTS {
@@ -111,6 +123,7 @@ erDiagram
     USERS ||--o{ PAYMENTS : "confirms (receiving_user_id)"
     PAYMENTS ||--o{ PAYMENT_EVIDENCE : "supported by"
     USERS ||--o{ PAYMENT_EVIDENCE : "uploads"
+    PAYMENTS ||--o| PAYMENT_CONFIRMATIONS : "decided by receiving user"
     USERS ||--o{ SOCIAL_WORKER_ASSIGNMENTS : "assigned as worker"
     CHILDREN ||--o{ SOCIAL_WORKER_ASSIGNMENTS : "assigned to worker"
     PAYMENTS ||--o{ PAYMENT_REVIEWS : "reviewed in"
