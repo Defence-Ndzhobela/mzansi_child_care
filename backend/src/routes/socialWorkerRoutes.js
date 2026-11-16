@@ -8,6 +8,8 @@ function createSocialWorkerRoutes({ socialWorkerController, authenticate }) {
   const socialWorkerOnly = [authenticate, requireRole("SOCIAL_WORKER")];
 
   router.get("/children", socialWorkerOnly, asyncHandler(socialWorkerController.listAssignedChildren));
+  router.get("/arrangements", socialWorkerOnly, asyncHandler(socialWorkerController.listAssignedArrangements));
+  router.get("/payments", socialWorkerOnly, asyncHandler(socialWorkerController.listAssignedPayments));
 
   return router;
 }
