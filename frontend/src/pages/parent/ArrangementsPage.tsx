@@ -12,11 +12,20 @@ import {
 import { currentMonthKey, formatSADate, formatZAR } from '../../utils/format';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
+import { SocialWorkerSelect } from '../../components/SocialWorkerSelect';
 import { ToastBanner } from '../../components/ToastBanner';
 
 export function ArrangementsPage() {
   const { currentUser } = useAuth();
-  const { db, addArrangement, updateArrangement } = useData();
+  const {
+    db,
+    addArrangement,
+    updateArrangement,
+    socialWorkers,
+    socialWorkersLoading,
+    socialWorkersError,
+    refreshSocialWorkers,
+  } = useData();
   const { children, arrangements } = useParentScope();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -25,6 +34,7 @@ export function ArrangementsPage() {
   const [childId, setChildId] = useState('');
   const [roleInArrangement, setRoleInArrangement] = useState<MaintenanceRole>('RECEIVING');
   const [otherPartyId, setOtherPartyId] = useState('');
+  const [socialWorkerId, setSocialWorkerId] = useState('');
   const [expectedAmount, setExpectedAmount] = useState('1500');
   const [frequency, setFrequency] = useState<ArrangementFrequency>('Monthly');
   const [startDate, setStartDate] = useState(`${currentMonthKey()}-01`);
@@ -47,10 +57,14 @@ export function ArrangementsPage() {
     return [...members.entries()].map(([id, fullName]) => ({ id, fullName }));
   };
   const otherParentUsers = familyMembersOf(childId);
+  // A child that already has a social worker keeps it; only a child without one needs a choice here.
+  const selectedChild = children.find((c) => c.id === childId);
+  const needsWorker = !editing && Boolean(selectedChild) && !selectedChild?.socialWorker;
 
   const selectChild = (id: string) => {
     setChildId(id);
     setOtherPartyId(familyMembersOf(id)[0]?.id ?? '');
+    setSocialWorkerId('');
   };
 
   const openCreate = () => {
@@ -59,6 +73,7 @@ export function ArrangementsPage() {
     setChildId(first);
     setRoleInArrangement('RECEIVING');
     setOtherPartyId(familyMembersOf(first)[0]?.id ?? '');
+    setSocialWorkerId('');
     setExpectedAmount('1500');
     setFrequency('Monthly');
     setStartDate(`${currentMonthKey()}-01`);
@@ -99,6 +114,10 @@ export function ArrangementsPage() {
         setError('This child has no other approved family member yet. Link them to the child first.');
         return;
       }
+      if (needsWorker && !socialWorkerId) {
+        setError('Please select an available social worker for this child.');
+        return;
+      }
     }
 
     setSaving(true);
@@ -122,6 +141,7 @@ export function ArrangementsPage() {
           frequency,
           startDate,
           notes,
+          socialWorkerId: needsWorker ? socialWorkerId : undefined,
         });
         setToast('New maintenance arrangement created.');
       }
@@ -203,7 +223,8 @@ export function ArrangementsPage() {
                     Receiving Caregiver: <span className="font-medium">{receiver?.fullName}</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    Effective from {formatSADate(arr.startDate)}
+                    Effective from {formatSADate(arr.startDate)} · Social worker:{' '}
+                    <span className="font-medium text-slate-700">{arr.socialWorker?.fullName ?? 'Not assigned'}</span>
                   </p>
                   {arr.notes && <p className="text-xs text-slate-600 pt-1">{arr.notes}</p>}
                 </div>
@@ -298,6 +319,26 @@ export function ArrangementsPage() {
                   </select>
                 </div>
               </div>
+
+              {selectedChild?.socialWorker ? (
+                <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                  <span className="text-xs text-slate-500">Social worker</span>
+                  <p className="font-medium text-[#0F2942]">{selectedChild.socialWorker.fullName}</p>
+                  <p className="text-xs text-slate-600">
+                    Already assigned to this child, so this arrangement uses the same social worker.
+                  </p>
+                </div>
+              ) : selectedChild ? (
+                <SocialWorkerSelect
+                  id="arr-worker"
+                  value={socialWorkerId}
+                  onChange={setSocialWorkerId}
+                  workers={socialWorkers}
+                  loading={socialWorkersLoading}
+                  error={socialWorkersError}
+                  onRetry={() => void refreshSocialWorkers().catch(() => {})}
+                />
+              ) : null}
             </>
           )}
 

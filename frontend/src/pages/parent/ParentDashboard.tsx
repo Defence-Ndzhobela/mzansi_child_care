@@ -501,6 +501,12 @@ export function ParentDashboard() {
                         Born {formatSADate(child.dateOfBirth)} ({calculateAge(child.dateOfBirth)}{' '}
                         years)
                       </p>
+                      <p className="text-xs text-slate-600">
+                        Social worker:{' '}
+                        <span className="font-medium text-slate-800">
+                          {child.socialWorker?.fullName ?? 'Not assigned yet'}
+                        </span>
+                      </p>
                     </div>
                     <span className="text-xs font-medium text-slate-600">
                       {rel?.relationshipType ?? 'Caregiver'}

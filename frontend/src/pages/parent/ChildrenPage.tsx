@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Edit3, Link2, Plus, Users } from 'lucide-react';
+import { Edit3, Link2, Plus, UserCog, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { Child, RelationshipType } from '../../types';
 import { calculateAge, formatSADate } from '../../utils/format';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
+import { SocialWorkerSelect } from '../../components/SocialWorkerSelect';
 import { ToastBanner } from '../../components/ToastBanner';
 
 const RELATIONSHIP_OPTIONS: RelationshipType[] = [
@@ -17,7 +18,7 @@ const RELATIONSHIP_OPTIONS: RelationshipType[] = [
   'Extended Family Caregiver',
 ];
 
-type ModalMode = 'create' | 'edit' | 'link';
+type ModalMode = 'create' | 'edit' | 'link' | 'assign';
 
 export function ChildrenPage() {
   const { currentUser } = useAuth();
@@ -26,10 +27,15 @@ export function ChildrenPage() {
     childrenLoading,
     childrenError,
     pendingChildLinkRequests,
+    socialWorkers,
+    socialWorkersLoading,
+    socialWorkersError,
+    refreshSocialWorkers,
     refreshFamilyData,
     refreshChildLinkRequests,
     addChild,
     updateChild,
+    assignSocialWorker,
     requestChildLink,
     respondToChildLinkRequest,
   } = useData();
@@ -44,6 +50,7 @@ export function ChildrenPage() {
   const [southAfricanId, setSouthAfricanId] = useState('');
   const [relationshipType, setRelationshipType] = useState<RelationshipType>('Mother');
   const [isPrimaryCaregiver, setIsPrimaryCaregiver] = useState(true);
+  const [socialWorkerId, setSocialWorkerId] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +66,8 @@ export function ChildrenPage() {
 
   if (!currentUser) return null;
 
+  const retrySocialWorkers = () => void refreshSocialWorkers().catch(() => {});
+
   const openCreate = () => {
     setModalMode('create');
     setEditingChild(null);
@@ -68,6 +77,7 @@ export function ChildrenPage() {
     setSouthAfricanId('');
     setRelationshipType('Mother');
     setIsPrimaryCaregiver(true);
+    setSocialWorkerId('');
     setError('');
     setModalOpen(true);
   };
@@ -91,9 +101,21 @@ export function ChildrenPage() {
     setModalOpen(true);
   };
 
+  const openAssign = (child: Child) => {
+    setModalMode('assign');
+    setEditingChild(child);
+    setSocialWorkerId(child.socialWorker?.id ?? '');
+    setError('');
+    setModalOpen(true);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
+    if ((modalMode === 'create' || modalMode === 'assign') && !socialWorkerId) {
+      setError('Please select an available social worker.');
+      return;
+    }
     setSubmitting(true);
     try {
       if (modalMode === 'link') {
@@ -102,6 +124,10 @@ export function ChildrenPage() {
       } else if (modalMode === 'edit' && editingChild) {
         await updateChild(editingChild.id, { firstName, lastName, dateOfBirth });
         setToast(`Updated child profile for ${firstName.trim()} ${lastName.trim()}.`);
+      } else if (modalMode === 'assign' && editingChild) {
+        await assignSocialWorker(editingChild.id, socialWorkerId);
+        const name = socialWorkers.find((worker) => worker.id === socialWorkerId)?.fullName ?? 'the selected social worker';
+        setToast(`${name} is now the social worker for ${editingChild.firstName} ${editingChild.lastName}.`);
       } else {
         await addChild({
           firstName,
@@ -110,8 +136,9 @@ export function ChildrenPage() {
           southAfricanId,
           relationshipType,
           isPrimaryCaregiver,
+          socialWorkerId,
         });
-        setToast('Profile submitted. If an existing child profile matches, its creator must approve access.');
+        setToast('Profile submitted with your social worker. If an existing child profile matches, its creator must approve access and the child keeps its current social worker.');
       }
       setSouthAfricanId('');
       setModalOpen(false);
@@ -137,7 +164,11 @@ export function ChildrenPage() {
 
   const title = modalMode === 'link'
     ? 'Link Existing Child'
-    : modalMode === 'edit' ? 'Edit Child Profile' : 'Create Child Profile';
+    : modalMode === 'edit'
+      ? 'Edit Child Profile'
+      : modalMode === 'assign'
+        ? (editingChild?.socialWorker ? 'Change Social Worker' : 'Assign Social Worker')
+        : 'Create Child Profile';
 
   return (
     <div className="space-y-6">
@@ -204,6 +235,7 @@ export function ChildrenPage() {
                 <th className="px-4 py-3">Age</th>
                 <th className="px-4 py-3">Your Relationship</th>
                 <th className="px-4 py-3">Linked Parents / Caregivers</th>
+                <th className="px-4 py-3">Social Worker</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -222,12 +254,23 @@ export function ChildrenPage() {
                     <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-700">{calculateAge(child.dateOfBirth)} yrs</td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">{myRelationship?.relationshipType ?? 'Caregiver'}{myRelationship?.isPrimaryCaregiver ? ' · Primary' : ''}</td>
                     <td className="px-4 py-3 text-xs text-slate-600">{linkedNames || '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                      {child.socialWorker ? child.socialWorker.fullName : (
+                        <span className="text-xs font-medium text-amber-800">Not assigned</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       {child.createdBy === currentUser.id && (
-                        <button type="button" onClick={() => openEdit(child)} className="inline-flex items-center gap-1 text-xs font-medium text-[#0F2942] hover:underline">
-                          <Edit3 className="h-3.5 w-3.5" />
-                          <span>Edit</span>
-                        </button>
+                        <div className="inline-flex items-center gap-3">
+                          <button type="button" onClick={() => openEdit(child)} className="inline-flex items-center gap-1 text-xs font-medium text-[#0F2942] hover:underline">
+                            <Edit3 className="h-3.5 w-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button type="button" onClick={() => openAssign(child)} className="inline-flex items-center gap-1 text-xs font-medium text-[#006847] hover:underline">
+                            <UserCog className="h-3.5 w-3.5" />
+                            <span>{child.socialWorker ? 'Change worker' : 'Assign worker'}</span>
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -241,7 +284,23 @@ export function ChildrenPage() {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={title}>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <div role="alert" className="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
-          {modalMode === 'link' ? (
+          {modalMode === 'assign' && editingChild ? (
+            <>
+              <p className="text-sm text-slate-700">
+                Choose the social worker for <strong>{editingChild.firstName} {editingChild.lastName}</strong>.
+                Every parent linked to this child will see the same social worker. The previous assignment is kept as history.
+              </p>
+              <SocialWorkerSelect
+                id="assign-worker"
+                value={socialWorkerId}
+                onChange={setSocialWorkerId}
+                workers={socialWorkers}
+                loading={socialWorkersLoading}
+                error={socialWorkersError}
+                onRetry={retrySocialWorkers}
+              />
+            </>
+          ) : modalMode === 'link' ? (
             <>
               <div className="rounded-sm border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 The child’s profile creator must approve your request. Entering an ID does not grant access. The ID is used only for a protected lookup and is not stored as plain text.
@@ -292,6 +351,15 @@ export function ChildrenPage() {
                       <span>I am a primary caregiver</span>
                     </label>
                   </div>
+                  <SocialWorkerSelect
+                    id="child-worker"
+                    value={socialWorkerId}
+                    onChange={setSocialWorkerId}
+                    workers={socialWorkers}
+                    loading={socialWorkersLoading}
+                    error={socialWorkersError}
+                    onRetry={retrySocialWorkers}
+                  />
                 </>
               )}
             </>
@@ -299,7 +367,7 @@ export function ChildrenPage() {
           <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-sm border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={submitting} className="rounded-sm bg-[#006847] px-4 py-2 text-sm font-medium text-white hover:bg-[#005238] disabled:opacity-60">
-              {submitting ? 'Saving…' : modalMode === 'link' ? 'Request Link' : modalMode === 'edit' ? 'Save Changes' : 'Create Child Profile'}
+              {submitting ? 'Saving…' : modalMode === 'link' ? 'Request Link' : modalMode === 'edit' ? 'Save Changes' : modalMode === 'assign' ? 'Save Social Worker' : 'Create Child Profile'}
             </button>
           </div>
         </form>
