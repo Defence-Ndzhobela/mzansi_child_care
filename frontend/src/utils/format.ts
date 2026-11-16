@@ -58,6 +58,15 @@ export function getMonthKey(dateStr: string): string {
   return dateStr.slice(0, 7); // YYYY-MM
 }
 
+// The current calendar month in South Africa, matching the month the backend summarises.
+export function currentMonthKey(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Johannesburg' }).slice(0, 7);
+}
+
+export function todayIso(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Johannesburg' });
+}
+
 export function exportToCSV(filename: string, headers: string[], rows: (string | number)[][]): void {
   const escapeCell = (val: string | number) => {
     const str = String(val ?? '');

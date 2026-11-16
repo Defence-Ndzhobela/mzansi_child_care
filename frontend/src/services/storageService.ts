@@ -22,8 +22,10 @@ function migrateDemoData(raw: string): Partial<AppDatabaseState> {
   }) as Partial<AppDatabaseState>;
 }
 
+// Arrangements, payments and evidence live in the backend database, never in this browser.
 function freshDemoData(): AppDatabaseState {
-  return migrateDemoData(JSON.stringify(SEED_DATA)) as AppDatabaseState;
+  const seed = migrateDemoData(JSON.stringify(SEED_DATA)) as AppDatabaseState;
+  return { ...seed, arrangements: [], payments: [], evidence: [] };
 }
 
 export function loadDatabase(): AppDatabaseState {
@@ -42,9 +44,9 @@ export function loadDatabase(): AppDatabaseState {
       users: (parsed.users ?? seed.users).filter((user) => DEMO_USER_DB_IDS.has(user.id)),
       children: [],
       familyRelationships: [],
-      arrangements: parsed.arrangements ?? seed.arrangements,
-      payments: parsed.payments ?? seed.payments,
-      evidence: parsed.evidence ?? seed.evidence,
+      arrangements: [],
+      payments: [],
+      evidence: [],
       assignments: parsed.assignments ?? seed.assignments,
       reviews: parsed.reviews ?? seed.reviews,
       professionalNotes: parsed.professionalNotes ?? seed.professionalNotes,
@@ -66,6 +68,9 @@ export function saveDatabase(state: AppDatabaseState): void {
     users: state.users.filter((user) => DEMO_USER_DB_IDS.has(user.id)),
     children: [],
     familyRelationships: [],
+    arrangements: [],
+    payments: [],
+    evidence: [],
   }));
 }
 

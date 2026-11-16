@@ -87,7 +87,7 @@ export function RegisterPage() {
             <option value="PARENT_CAREGIVER">Parent / Caregiver</option>
             <option value="PAYING_PARENT">Paying Parent</option>
           </select>
-          <p className="mt-1 text-xs text-slate-600">Both options create a parent / caregiver account; this choice is not saved separately.</p>
+          <p className="mt-1 text-xs text-slate-600">Both options create the same parent / caregiver account. Whether you pay or receive is set per child through approved family links and maintenance arrangements, not by this choice.</p>
         </div>
         <div>
           <label htmlFor="reg-password" className="block text-sm font-medium text-slate-800">Password</label>

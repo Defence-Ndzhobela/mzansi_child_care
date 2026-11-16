@@ -266,9 +266,6 @@ export function DashboardLayout() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto">
-          <p className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Dashboard records are fictional demo data stored in this browser. Do not enter real personal information.
-          </p>
           <Outlet />
         </main>
       </div>

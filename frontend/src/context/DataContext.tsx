@@ -1,12 +1,14 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   AppDatabaseState,
   ArrangementFrequency,
   ArrangementStatus,
   Child,
   ChildLinkRequest,
+  DashboardSummary,
   FamilyRelationship,
   MaintenanceArrangement,
+  MaintenanceRole,
   Payment,
   PaymentConcern,
   PaymentEvidence,
@@ -15,18 +17,30 @@ import {
   ProfessionalNote,
   RelationshipType,
   ReviewStatus,
+  User,
 } from '../types';
 import { DEMO_USER_DB_IDS, loadDatabase, resetDatabaseStorage, saveDatabase } from '../services/storageService';
 import { apiFetch } from '../services/apiClient';
 import { generateId } from '../utils/format';
 import { useAuth } from './AuthContext';
 
+interface EvidenceInput {
+  fileName: string;
+  fileType: string;
+  fileSizeLabel: string;
+  description: string;
+}
+
 interface DataContextValue {
   db: AppDatabaseState;
   childrenLoading: boolean;
   childrenError: string | null;
+  maintenanceLoading: boolean;
+  maintenanceError: string | null;
+  dashboardSummary: DashboardSummary | null;
   pendingChildLinkRequests: ChildLinkRequest[];
   refreshFamilyData: () => Promise<void>;
+  refreshMaintenanceData: () => Promise<void>;
   refreshChildLinkRequests: () => Promise<void>;
   updateUserProfile: (
     userId: string,
@@ -46,17 +60,17 @@ interface DataContextValue {
   ) => Promise<void>;
   requestChildLink: (southAfricanId: string, relationshipType: RelationshipType) => Promise<void>;
   respondToChildLinkRequest: (requestId: string, decision: 'APPROVED' | 'REJECTED') => Promise<void>;
+  // The server decides who pays and who receives from myRole and the signed-in account.
   addArrangement: (input: {
     childId: string;
-    payingUserId: string;
-    receivingUserId: string;
+    myRole: MaintenanceRole;
+    otherUserId: string;
     expectedAmount: number;
     frequency: ArrangementFrequency;
     startDate: string;
     endDate?: string;
-    status: ArrangementStatus;
     notes?: string;
-  }) => MaintenanceArrangement;
+  }) => Promise<void>;
   updateArrangement: (
     arrangementId: string,
     updates: {
@@ -67,38 +81,22 @@ interface DataContextValue {
       status: ArrangementStatus;
       notes?: string;
     }
-  ) => void;
+  ) => Promise<void>;
   recordPayment: (input: {
     arrangementId: string;
     amount: number;
     paymentDate: string;
     paymentMethod: PaymentMethod;
     paymentReference: string;
-    recordedByUserId: string;
-    evidenceFile?: {
-      fileName: string;
-      fileType: string;
-      fileSizeLabel: string;
-      fileUrl: string;
-      description: string;
-    };
-  }) => Payment;
+    evidenceFile?: EvidenceInput;
+  }) => Promise<void>;
   confirmOrDisputePayment: (input: {
     paymentId: string;
     action: 'CONFIRM_FULL' | 'CONFIRM_PARTIAL' | 'DISPUTE';
     confirmedAmount?: number;
     note?: string;
-    actorUserId: string;
-  }) => void;
-  addEvidenceToPayment: (input: {
-    paymentId: string;
-    uploadedBy: string;
-    fileName: string;
-    fileType: string;
-    fileSizeLabel: string;
-    fileUrl: string;
-    description: string;
-  }) => PaymentEvidence;
+  }) => Promise<void>;
+  addEvidenceToPayment: (input: { paymentId: string } & EvidenceInput) => Promise<void>;
   upsertPaymentReview: (input: {
     paymentId: string;
     reviewedBy: string;
@@ -141,12 +139,51 @@ function relationshipPayload(relationshipType: RelationshipType): string {
   return relationshipType.replace(/[\s-]+/g, '_').toUpperCase();
 }
 
+const PAYMENT_METHOD_CODES: Record<PaymentMethod, string> = {
+  'EFT Bank Transfer': 'EFT_BANK_TRANSFER',
+  'eWallet / Instant Money': 'E_WALLET_INSTANT_MONEY',
+  'Cash with Receipt': 'CASH_WITH_RECEIPT',
+  'Retail Money Transfer': 'RETAIL_MONEY_TRANSFER',
+  Other: 'OTHER',
+};
+
+type ApiArrangement = MaintenanceArrangement & { payerName: string; receiverName: string };
+type ApiPayment = Payment & { payerName: string; receiverName: string; evidence: PaymentEvidence[] };
+
+async function readList<T>(response: Response, key: string): Promise<T[]> {
+  if (!response.ok) throw new Error(await responseError(response));
+  const body = await response.json() as Record<string, unknown>;
+  const list = body[key];
+  if (!Array.isArray(list)) throw new Error('The server returned an invalid response.');
+  return list as T[];
+}
+
+async function sendJson(path: string, method: string, body: unknown): Promise<void> {
+  const response = await apiFetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await responseError(response));
+}
+
+function partyUser(id: string, fullName: string): User {
+  return {
+    id, fullName, email: '', phone: '', role: 'PARENT_CAREGIVER',
+    accountStatus: 'ACTIVE', createdAt: '', updatedAt: '',
+  };
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { currentUser, isLoading: authLoading } = useAuth();
   const [db, setDb] = useState<AppDatabaseState>(() => loadDatabase());
   const [childrenLoading, setChildrenLoading] = useState(true);
   const [childrenError, setChildrenError] = useState<string | null>(null);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(true);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [pendingChildLinkRequests, setPendingChildLinkRequests] = useState<ChildLinkRequest[]>([]);
+  const maintenanceRequest = useRef(0);
 
   const refreshChildLinkRequests = useCallback(async () => {
     if (!currentUser || currentUser.role !== 'PARENT_CAREGIVER') {
@@ -162,8 +199,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const refreshFamilyData = useCallback(async () => {
     if (!currentUser) {
-      setDb((previous) => ({ ...previous, children: [], familyRelationships: [] }));
+      setDb((previous) => ({
+        ...previous,
+        users: previous.users.filter((user) => DEMO_USER_DB_IDS.has(user.id)),
+        children: [],
+        familyRelationships: [],
+        arrangements: [],
+        payments: [],
+        evidence: [],
+      }));
       setPendingChildLinkRequests([]);
+      setDashboardSummary(null);
       setChildrenLoading(false);
       setChildrenError(null);
       return;
@@ -191,8 +237,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const relationships = body.children.flatMap((item) => item.relationships ?? []);
 
       setDb((previous) => {
+        // Keep names of people already known from arrangements and payments loaded earlier.
+        const partyIds = new Set([
+          ...previous.arrangements.flatMap((a) => [a.payingUserId, a.receivingUserId]),
+          ...previous.payments.flatMap((p) => [p.payingUserId, p.receivingUserId]),
+        ]);
         const users = new Map(previous.users
-          .filter((user) => DEMO_USER_DB_IDS.has(user.id))
+          .filter((user) => DEMO_USER_DB_IDS.has(user.id) || partyIds.has(user.id))
           .map((user) => [user.id, user]));
         users.set(currentUser.id, { ...users.get(currentUser.id), ...currentUser });
         relationships.forEach((relationship) => {
@@ -230,10 +281,83 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, refreshChildLinkRequests]);
 
+  // Arrangements, payments and evidence always come from the backend. Responses that arrive
+  // after the signed-in user changed (or after a newer request started) are ignored.
+  const refreshMaintenanceData = useCallback(async () => {
+    const requestId = ++maintenanceRequest.current;
+    if (!currentUser) {
+      setDashboardSummary(null);
+      setMaintenanceLoading(false);
+      setMaintenanceError(null);
+      return;
+    }
+
+    setMaintenanceLoading(true);
+    setMaintenanceError(null);
+    try {
+      const isParent = currentUser.role === 'PARENT_CAREGIVER';
+      const prefix = isParent ? '/parent' : '/social-worker';
+      const [arrangementResponse, paymentResponse, summaryResponse] = await Promise.all([
+        apiFetch(`${prefix}/arrangements`),
+        apiFetch(`${prefix}/payments`),
+        isParent ? apiFetch('/parent/dashboard-summary') : Promise.resolve(null),
+      ]);
+      const arrangements = await readList<ApiArrangement>(arrangementResponse, 'arrangements');
+      const payments = await readList<ApiPayment>(paymentResponse, 'payments');
+      let summary: DashboardSummary | null = null;
+      if (summaryResponse) {
+        if (!summaryResponse.ok) throw new Error(await responseError(summaryResponse));
+        const body = await summaryResponse.json() as { summary?: DashboardSummary };
+        if (!body.summary) throw new Error('The server returned an invalid response.');
+        summary = body.summary;
+      }
+      if (requestId !== maintenanceRequest.current) return;
+
+      setDb((previous) => {
+        const users = new Map(previous.users.map((user) => [user.id, user]));
+        const learn = (id: string, name: string) => {
+          if (!users.has(id)) users.set(id, partyUser(id, name));
+        };
+        arrangements.forEach((a) => {
+          learn(a.payingUserId, a.payerName);
+          learn(a.receivingUserId, a.receiverName);
+        });
+        payments.forEach((p) => {
+          learn(p.payingUserId, p.payerName);
+          learn(p.receivingUserId, p.receiverName);
+        });
+        return {
+          ...previous,
+          users: [...users.values()],
+          arrangements,
+          payments,
+          evidence: payments.flatMap((p) => p.evidence),
+        };
+      });
+      setDashboardSummary(summary);
+    } catch (error) {
+      if (requestId === maintenanceRequest.current) {
+        setMaintenanceError(
+          error instanceof Error ? error.message : 'Unable to load maintenance arrangements and payments.'
+        );
+      }
+      throw error;
+    } finally {
+      if (requestId === maintenanceRequest.current) setMaintenanceLoading(false);
+    }
+  }, [currentUser]);
+
+  // Family and maintenance data load in parallel; both merge into the same state safely.
   useEffect(() => {
     if (authLoading) return;
-    void refreshFamilyData().catch(() => {});
-  }, [authLoading, refreshFamilyData]);
+    if (currentUser) setMaintenanceLoading(true);
+    void refreshFamilyData().catch(() => {
+      // The error is already stored for the child list.
+    });
+    void refreshMaintenanceData().catch(() => {
+      // The error is already stored for the maintenance data.
+    });
+  }, [authLoading, currentUser, refreshFamilyData, refreshMaintenanceData]);
 
   const commit = (updater: (prev: AppDatabaseState) => AppDatabaseState) => {
     setDb((prev) => {
@@ -304,254 +428,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refreshFamilyData();
   };
 
-  const addArrangement: DataContextValue['addArrangement'] = (input) => {
-    const now = new Date().toISOString();
-    const arr: MaintenanceArrangement = {
-      id: generateId('arr'),
+  const addArrangement: DataContextValue['addArrangement'] = async (input) => {
+    await sendJson('/parent/arrangements', 'POST', {
       childId: input.childId,
-      payingUserId: input.payingUserId,
-      receivingUserId: input.receivingUserId,
+      myRole: input.myRole,
+      otherUserId: input.otherUserId,
       expectedAmount: input.expectedAmount,
-      currency: 'ZAR',
-      frequency: input.frequency,
+      frequency: input.frequency.toUpperCase(),
       startDate: input.startDate,
       endDate: input.endDate || undefined,
-      status: input.status,
       notes: input.notes?.trim() || undefined,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    commit((prev) => {
-      return {
-        ...prev,
-        arrangements: [arr, ...prev.arrangements],
-      };
     });
-
-    return arr;
+    await refreshMaintenanceData();
   };
 
-  const updateArrangement: DataContextValue['updateArrangement'] = (arrangementId, updates) => {
-    const now = new Date().toISOString();
-    commit((prev) => ({
-      ...prev,
-      arrangements: prev.arrangements.map((a) =>
-        a.id === arrangementId
-          ? {
-              ...a,
-              expectedAmount: updates.expectedAmount,
-              frequency: updates.frequency,
-              startDate: updates.startDate,
-              endDate: updates.endDate || undefined,
-              status: updates.status,
-              notes: updates.notes?.trim() || undefined,
-              updatedAt: now,
-            }
-          : a
-      ),
-    }));
+  const updateArrangement: DataContextValue['updateArrangement'] = async (arrangementId, updates) => {
+    await sendJson(`/parent/arrangements/${encodeURIComponent(arrangementId)}`, 'PATCH', {
+      expectedAmount: updates.expectedAmount,
+      frequency: updates.frequency.toUpperCase(),
+      startDate: updates.startDate,
+      endDate: updates.endDate || undefined,
+      status: updates.status.toUpperCase(),
+      notes: updates.notes?.trim() || undefined,
+    });
+    await refreshMaintenanceData();
   };
 
-  const recordPayment: DataContextValue['recordPayment'] = (input) => {
-    const now = new Date().toISOString();
-    const arrangement = db.arrangements.find((a) => a.id === input.arrangementId);
-    if (!arrangement) {
-      throw new Error('Selected maintenance arrangement was not found.');
-    }
-
-    const child = db.children.find((c) => c.id === arrangement.childId);
-    const payer = db.users.find((u) => u.id === arrangement.payingUserId);
-
-    const newPayment: Payment = {
-      id: generateId('pay'),
-      arrangementId: arrangement.id,
-      childId: arrangement.childId,
-      payingUserId: arrangement.payingUserId,
-      receivingUserId: arrangement.receivingUserId,
+  const recordPayment: DataContextValue['recordPayment'] = async (input) => {
+    await sendJson('/parent/payments', 'POST', {
+      arrangementId: input.arrangementId,
       amount: input.amount,
-      currency: 'ZAR',
       paymentDate: input.paymentDate,
-      paymentMethod: input.paymentMethod,
-      paymentReference: input.paymentReference.trim() || `REF-${Date.now().toString().slice(-6)}`,
-      status: 'Awaiting confirmation',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const newEvidence: PaymentEvidence | null = input.evidenceFile
-      ? {
-          id: generateId('ev'),
-          paymentId: newPayment.id,
-          uploadedBy: input.recordedByUserId,
-          fileName: input.evidenceFile.fileName,
-          fileType: input.evidenceFile.fileType,
-          fileSizeLabel: input.evidenceFile.fileSizeLabel,
-          fileUrl: input.evidenceFile.fileUrl,
-          description: input.evidenceFile.description,
-          uploadedAt: now,
-        }
-      : null;
-
-    const assignedWorker = db.assignments.find(
-      (a) => a.childId === arrangement.childId && a.assignmentStatus === 'ACTIVE'
-    );
-
-    const newReview: PaymentReview | null = assignedWorker
-      ? {
-          id: generateId('rev'),
-          paymentId: newPayment.id,
-          reviewedBy: assignedWorker.socialWorkerId,
-          reviewStatus: 'Pending Review',
-          reviewNotes: 'Newly recorded payment awaiting recipient confirmation and case review.',
-          reviewedAt: now,
-        }
-      : null;
-
-    const newNotifications = [
-      {
-        id: generateId('notif'),
-        userId: arrangement.receivingUserId,
-        title: 'New payment awaiting confirmation',
-        message: `${payer?.fullName ?? 'Paying parent'} recorded R ${input.amount.toFixed(2)} for ${
-          child ? `${child.firstName} ${child.lastName}` : 'child'
-        }.`,
-        isRead: false,
-        createdAt: now,
-        linkTo: '/parent/payments',
-      },
-    ];
-
-    commit((prev) => ({
-      ...prev,
-      payments: [newPayment, ...prev.payments],
-      evidence: newEvidence ? [newEvidence, ...prev.evidence] : prev.evidence,
-      reviews: newReview ? [newReview, ...prev.reviews] : prev.reviews,
-      notifications: [...newNotifications, ...prev.notifications],
-    }));
-
-    return newPayment;
-  };
-
-  const confirmOrDisputePayment: DataContextValue['confirmOrDisputePayment'] = (input) => {
-    const now = new Date().toISOString();
-    commit((prev) => {
-      const target = prev.payments.find((p) => p.id === input.paymentId);
-      if (!target) return prev;
-
-      const child = prev.children.find((c) => c.id === target.childId);
-      const childName = child ? `${child.firstName} ${child.lastName}` : 'Child';
-
-      let updatedPayment: Payment = { ...target, updatedAt: now };
-      const extraConcerns = [...prev.concerns];
-      const extraNotifications = [...prev.notifications];
-
-      if (input.action === 'CONFIRM_FULL') {
-        updatedPayment = {
-          ...updatedPayment,
-          status: 'Confirmed by recipient',
-          confirmedAmount: target.amount,
-          recipientNote: input.note?.trim() || 'Full amount confirmed as received by recipient.',
-          disputeReason: undefined,
-        };
-      } else if (input.action === 'CONFIRM_PARTIAL') {
-        const partial = Math.max(0, Math.min(target.amount, input.confirmedAmount ?? 0));
-        updatedPayment = {
-          ...updatedPayment,
-          status: 'Partially confirmed',
-          confirmedAmount: partial,
-          recipientNote:
-            input.note?.trim() ||
-            `Partially confirmed R ${partial.toFixed(2)} out of R ${target.amount.toFixed(2)}.`,
-          disputeReason: undefined,
-        };
-        extraConcerns.unshift({
-          id: generateId('conc'),
-          paymentId: target.id,
-          childId: target.childId,
-          reportedBy: input.actorUserId,
-          category: 'Short Payment',
-          description:
-            input.note?.trim() ||
-            `Confirmed R ${partial.toFixed(2)} of R ${target.amount.toFixed(2)} recorded for ${childName}.`,
-          status: 'Open',
-          createdAt: now,
-          updatedAt: now,
-        });
-      } else {
-        updatedPayment = {
-          ...updatedPayment,
-          status: 'Disputed',
-          confirmedAmount: input.confirmedAmount ?? 0,
-          disputeReason: input.note?.trim() || 'Payment disputed by receiving caregiver.',
-        };
-        extraConcerns.unshift({
-          id: generateId('conc'),
-          paymentId: target.id,
-          childId: target.childId,
-          reportedBy: input.actorUserId,
-          category: 'Not Received',
-          description: input.note?.trim() || `Receiving parent disputed payment for ${childName}.`,
-          status: 'Open',
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      extraNotifications.unshift({
-        id: generateId('notif'),
-        userId: target.payingUserId,
-        title: `Payment ${updatedPayment.status.toLowerCase()}`,
-        message: `Recipient updated payment ${target.paymentReference} for ${childName} to "${updatedPayment.status}".`,
-        isRead: false,
-        createdAt: now,
-        linkTo: '/parent/history',
-      });
-
-      const assignedWorkers = prev.assignments.filter(
-        (a) => a.childId === target.childId && a.assignmentStatus === 'ACTIVE'
-      );
-      assignedWorkers.forEach((w) => {
-        if (input.action !== 'CONFIRM_FULL') {
-          extraNotifications.unshift({
-            id: generateId('notif'),
-            userId: w.socialWorkerId,
-            title: `Payment concern for ${childName}`,
-            message: `Payment ${target.paymentReference} marked "${updatedPayment.status}" and requires review.`,
-            isRead: false,
-            createdAt: now,
-            linkTo: '/social-worker/concerns',
-          });
-        }
-      });
-
-      return {
-        ...prev,
-        payments: prev.payments.map((p) => (p.id === target.id ? updatedPayment : p)),
-        concerns: extraConcerns,
-        notifications: extraNotifications,
-      };
+      paymentMethod: PAYMENT_METHOD_CODES[input.paymentMethod],
+      paymentReference: input.paymentReference.trim(),
+      evidence: input.evidenceFile,
     });
+    await refreshMaintenanceData();
   };
 
-  const addEvidenceToPayment: DataContextValue['addEvidenceToPayment'] = (input) => {
-    const now = new Date().toISOString();
-    const item: PaymentEvidence = {
-      id: generateId('ev'),
-      paymentId: input.paymentId,
-      uploadedBy: input.uploadedBy,
-      fileName: input.fileName,
-      fileType: input.fileType,
-      fileSizeLabel: input.fileSizeLabel,
-      fileUrl: input.fileUrl,
-      description: input.description,
-      uploadedAt: now,
-    };
-    commit((prev) => ({
-      ...prev,
-      evidence: [item, ...prev.evidence],
-    }));
-    return item;
+  const confirmOrDisputePayment: DataContextValue['confirmOrDisputePayment'] = async (input) => {
+    await sendJson(`/parent/payments/${encodeURIComponent(input.paymentId)}/confirmation`, 'POST', {
+      action: input.action,
+      confirmedAmount: input.action === 'CONFIRM_PARTIAL' ? input.confirmedAmount : undefined,
+      note: input.note?.trim() || undefined,
+    });
+    await refreshMaintenanceData();
+  };
+
+  const addEvidenceToPayment: DataContextValue['addEvidenceToPayment'] = async ({ paymentId, ...evidence }) => {
+    await sendJson(`/parent/payments/${encodeURIComponent(paymentId)}/evidence`, 'POST', evidence);
+    await refreshMaintenanceData();
   };
 
   const upsertPaymentReview: DataContextValue['upsertPaymentReview'] = (input) => {
@@ -655,7 +581,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const resetDemoData = () => {
     const fresh = resetDatabaseStorage();
     setDb(fresh);
-    void refreshFamilyData().catch(() => {});
+    void refreshFamilyData().catch(() => {}).then(() => refreshMaintenanceData()).catch(() => {});
   };
 
   return (
@@ -664,8 +590,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         db,
         childrenLoading,
         childrenError,
+        maintenanceLoading,
+        maintenanceError,
+        dashboardSummary,
         pendingChildLinkRequests,
         refreshFamilyData,
+        refreshMaintenanceData,
         refreshChildLinkRequests,
         updateUserProfile,
         addChild,

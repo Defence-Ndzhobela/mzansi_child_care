@@ -1,8 +1,24 @@
 import { useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { MaintenanceArrangement, MaintenanceRole, Payment } from '../types';
 
-export const CURRENT_DEMO_MONTH = '2026-11';
+// Responsibilities are per arrangement: the same account can pay for one child and receive for another.
+export function roleInArrangement(
+  arrangement: Pick<MaintenanceArrangement, 'payingUserId' | 'receivingUserId'>,
+  userId: string
+): MaintenanceRole | null {
+  if (arrangement.payingUserId === userId) return 'PAYING';
+  if (arrangement.receivingUserId === userId) return 'RECEIVING';
+  return null;
+}
+
+export function isAwaitingMyConfirmation(payment: Payment, userId: string): boolean {
+  return (
+    payment.receivingUserId === userId &&
+    (payment.status === 'Awaiting confirmation' || payment.status === 'Submitted')
+  );
+}
 
 export function useParentScope() {
   const { currentUser } = useAuth();
@@ -13,13 +29,13 @@ export function useParentScope() {
       return {
         children: [],
         arrangements: [],
+        payingArrangements: [],
+        receivingArrangements: [],
         payments: [],
         concerns: [],
-        expectedMonthly: 0,
-        receivedCurrentMonth: 0,
-        outstandingCurrentMonth: 0,
-        latestPaymentDate: '',
-        awaitingConfirmationCount: 0,
+        awaitingMyConfirmation: [],
+        isPayer: false,
+        isReceiver: false,
       };
     }
 
@@ -38,49 +54,25 @@ export function useParentScope() {
     const arrangements = db.arrangements.filter(
       (a) => a.payingUserId === currentUser.id || a.receivingUserId === currentUser.id
     );
+    const payingArrangements = arrangements.filter((a) => a.payingUserId === currentUser.id);
+    const receivingArrangements = arrangements.filter((a) => a.receivingUserId === currentUser.id);
     const payments = db.payments
       .filter((p) => p.payingUserId === currentUser.id || p.receivingUserId === currentUser.id)
       .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
 
     const concerns = db.concerns.filter((c) => accessibleChildIds.has(c.childId));
-
-    const activeArrangements = arrangements.filter((a) => a.status === 'Active');
-    const expectedMonthly = activeArrangements.reduce((sum, a) => {
-      if (a.frequency === 'Weekly') return sum + a.expectedAmount * 4;
-      if (a.frequency === 'Fortnightly') return sum + a.expectedAmount * 2;
-      return sum + a.expectedAmount;
-    }, 0);
-
-    const currentMonthPayments = payments.filter((p) => p.paymentDate.startsWith(CURRENT_DEMO_MONTH));
-
-    const receivedCurrentMonth = currentMonthPayments.reduce((sum, p) => {
-      if (p.status === 'Confirmed by recipient') {
-        return sum + (p.confirmedAmount ?? p.amount);
-      }
-      if (p.status === 'Partially confirmed') {
-        return sum + (p.confirmedAmount ?? 0);
-      }
-      return sum;
-    }, 0);
-
-    const outstandingCurrentMonth = Math.max(0, expectedMonthly - receivedCurrentMonth);
-    const latestPaymentDate = payments.length > 0 ? payments[0].paymentDate : '';
-    const awaitingConfirmationCount = payments.filter(
-      (p) =>
-        p.receivingUserId === currentUser.id &&
-        (p.status === 'Awaiting confirmation' || p.status === 'Submitted')
-    ).length;
+    const awaitingMyConfirmation = payments.filter((p) => isAwaitingMyConfirmation(p, currentUser.id));
 
     return {
       children,
       arrangements,
+      payingArrangements,
+      receivingArrangements,
       payments,
       concerns,
-      expectedMonthly,
-      receivedCurrentMonth,
-      outstandingCurrentMonth,
-      latestPaymentDate,
-      awaitingConfirmationCount,
+      awaitingMyConfirmation,
+      isPayer: payingArrangements.length > 0,
+      isReceiver: receivingArrangements.length > 0,
     };
   }, [currentUser, db]);
 }

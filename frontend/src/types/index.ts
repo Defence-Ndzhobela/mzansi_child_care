@@ -56,7 +56,10 @@ export interface ChildLinkRequest {
 }
 
 export type ArrangementFrequency = 'Monthly' | 'Fortnightly' | 'Weekly';
-export type ArrangementStatus = 'Active' | 'Paused' | 'Completed';
+export type ArrangementStatus = 'Active' | 'Paused' | 'Completed' | 'Cancelled';
+
+// Which side of a maintenance arrangement the signed-in user is on.
+export type MaintenanceRole = 'PAYING' | 'RECEIVING';
 
 export interface MaintenanceArrangement {
   id: string;
@@ -114,9 +117,37 @@ export interface PaymentEvidence {
   fileName: string;
   fileType: string;
   fileSizeLabel: string;
-  fileUrl: string; // Simulated local data URL or demo path
+  // Only metadata is stored; file contents are not uploaded yet.
+  fileUrl?: string;
   description: string;
   uploadedAt: string;
+}
+
+export interface RoleSummary {
+  arrangementCount: number;
+  expectedAmount: number;
+  paidAmount: number;
+  confirmedAmount: number;
+  outstandingAmount: number;
+  awaitingConfirmation: { count: number; amount: number };
+  disputed: { count: number; amount: number };
+}
+
+export interface DashboardSummary {
+  month: string;
+  paying: RoleSummary | null;
+  receiving: RoleSummary | null;
+  arrangements: {
+    arrangementId: string;
+    childId: string;
+    role: MaintenanceRole;
+    counterpartyName: string;
+    expectedAmount: number;
+    paidAmount: number;
+    confirmedAmount: number;
+    outstandingAmount: number;
+    awaitingConfirmationCount: number;
+  }[];
 }
 
 export type AssignmentStatus = 'ACTIVE' | 'CLOSED';
