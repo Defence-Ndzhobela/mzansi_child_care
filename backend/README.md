@@ -10,25 +10,21 @@ backend/
 ├── src/
 │   ├── app.js                builds the Express app: middleware, routes, error handling
 │   ├── config/               env.js (validated settings), database.js (Neon client)
-│   ├── routes/               endpoints + middleware per route (auth, child, family, socialWorker)
+│   ├── routes/               endpoints + middleware per route (auth, child, family, arrangement, payment, socialWorker)
 │   ├── controllers/          HTTP only: read request, call a service, send the response
-│   ├── services/             business logic and all SQL (auth, child, family)
+│   ├── services/             business logic and all SQL (auth, child, family, arrangement, payment)
 │   ├── validators/           request validation middleware
 │   ├── middleware/           JWT auth, role checks, rate limit, central error handler
-│   └── utils/                apiResponse, asyncHandler, encryptIdNumber, helpers
+│   └── utils/                apiResponse, asyncHandler, encryptIdNumber, payment summary, helpers
 ├── database/
 │   ├── schema.sql            current full schema (for a brand-new database)
-│   ├── migrations/           001_initial_schema.sql, 002_child_linking.sql
+│   ├── migrations/           001_initial_schema.sql, 002_child_linking.sql, 003_payment_persistence.sql
 │   ├── seeds/demoData.sql    fictional demo users and records (development only)
 │   └── migrate.js            migration runner
-└── tests/                    node:test suites (fake database, no network)
+└── tests/                    node:test suites (fake database), plus one Neon integration suite
 ```
 
-There is no backend code yet for maintenance arrangements, payments, evidence
-uploads or notifications. Those tables exist in the schema, but the dashboard
-still keeps that data in the browser. Add the matching controller, service,
-route and validator files, plus upload middleware and storage config for
-evidence, when those features are built.
+Not built yet: evidence file uploads (only metadata is stored) and notifications.
 
 ## Run locally
 
@@ -155,6 +151,37 @@ guardianship; verify the requester through an appropriate out-of-band process
 before approving. No email or SMS notification is configured; pending requests
 appear in the creator's in-app Child Profiles page.
 
-Child profiles and family relationships are fetched from Neon and are not
-persisted in browser localStorage. Other dashboard records, arrangements, and
-payments remain browser-local demo data and are not protected Neon records.
+Child profiles, family relationships, maintenance arrangements, payments,
+confirmations and evidence metadata are fetched from Neon and are not persisted
+in browser localStorage. Social worker reviews, professional notes, concerns and
+notifications remain browser-local demo data.
+
+## Maintenance arrangements and payments
+
+All routes below are under `/api/parent` and need a signed-in `PARENT_CAREGIVER`.
+There is one parent role. Whether someone pays or receives is decided per
+arrangement from `paying_user_id` and `receiving_user_id`, never from the
+registration choice, and the client can never send those IDs (requests with
+unknown fields are rejected with 400).
+
+| Endpoint | Who may call it |
+| --- | --- |
+| `POST /arrangements` | A parent who is one of the two parties; both must already be approved family members of the child. The server derives payer and receiver from `myRole` and the session. |
+| `GET /arrangements`, `GET /payments` | Only a party to the record. Others get nothing, or 404 for a single record. |
+| `PATCH /arrangements/:id` | Either party; changes terms only, never the child, payer or receiver. |
+| `POST /payments` | Only the arrangement's paying parent, on an active arrangement. The receiving parent gets 403. |
+| `POST /payments/:id/evidence` | Only the payment's paying parent (metadata only; file contents are not stored yet). |
+| `POST /payments/:id/confirmation` | Only the payment's receiving parent, once, while the payment is awaiting confirmation (`CONFIRM_FULL`, `CONFIRM_PARTIAL` or `DISPUTE` with a reason). The payer gets 403. |
+| `GET /dashboard-summary?month=YYYY-MM` | Returns separate `paying` and `receiving` totals; only confirmed amounts reduce what is outstanding. |
+
+Social workers can read the arrangements and payments of actively assigned
+children at `GET /api/social-worker/arrangements` and `/payments`.
+
+These rules are enforced in the SQL of each statement and again by the
+database: `payments` has a composite foreign key to the arrangement's payer and
+receiver, and `payment_confirmations` can only store the payment's receiving
+user as the decision maker.
+
+`npm test` includes `tests/maintenance.integration.test.js`, which runs against
+the Neon database in `DATABASE_URL`. It creates accounts tagged with a per-run
+id and deletes them afterwards. It is skipped when `DATABASE_URL` is not set.

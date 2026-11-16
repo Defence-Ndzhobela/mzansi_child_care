@@ -38,7 +38,7 @@ INSERT INTO payments (id, arrangement_id, child_id, paying_user_id, receiving_us
     ('55555555-5555-4555-8555-555555555503', '44444444-4444-4444-8444-444444444403', '22222222-2222-4222-8222-222222222203', '11111111-1111-4111-8111-111111111105', '11111111-1111-4111-8111-111111111104', 1800.00, 900.00, 'ZAR', '2026-11-04', 'RETAIL_MONEY_TRANSFER', 'RMT-NOV-AMAHLE-04', 'DISPUTED')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO payment_evidence (id, payment_id, uploaded_by, file_name, file_url, description) VALUES
+INSERT INTO payment_evidence (id, payment_id, uploaded_by, file_name, storage_key, description) VALUES
     ('66666666-6666-4666-8666-666666666601', '55555555-5555-4555-8555-555555555501', '11111111-1111-4111-8111-111111111102', 'eft_receipt_nov_2026.pdf', 'https://storage.example.invalid/demo-evidence/eft_receipt_nov_2026.pdf', 'EFT payment confirmation slip uploaded by paying parent'),
     ('66666666-6666-4666-8666-666666666602', '55555555-5555-4555-8555-555555555502', '11111111-1111-4111-8111-111111111102', 'ewallet_sms_screenshot.png', 'https://storage.example.invalid/demo-evidence/ewallet_sms_screenshot.png', 'Instant money voucher reference screenshot'),
     ('66666666-6666-4666-8666-666666666603', '55555555-5555-4555-8555-555555555503', '11111111-1111-4111-8111-111111111105', 'till_slip_nov_04.jpg', 'https://storage.example.invalid/demo-evidence/till_slip_nov_04.jpg', 'Retail money transfer slip submitted by Kabelo Khumalo')
