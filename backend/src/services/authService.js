@@ -6,7 +6,7 @@ const { isUuid } = require("../utils/validationHelpers");
 const SESSION_COOKIE_NAME = "mzansi_session";
 const TOKEN_AGE_SECONDS = 8 * 60 * 60;
 const BCRYPT_COST = 12;
-const SUPPORTED_ROLES = ["PARENT_CAREGIVER", "SOCIAL_WORKER"];
+const SUPPORTED_ROLES = ["PARENT_CAREGIVER", "SOCIAL_WORKER", "ADMIN"];
 // Compared against when the email is unknown so response time does not reveal valid accounts.
 const DUMMY_HASH = bcrypt.hashSync("invalid-password", BCRYPT_COST);
 
