@@ -13,6 +13,7 @@ import {
   Link2,
   LogOut,
   Menu,
+  MessageSquare,
   Settings,
   UserCog,
   Users,
@@ -21,12 +22,14 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { IMAGES } from '../config/images';
 import { useData } from '../context/DataContext';
+import { useMessageSummary } from '../hooks/useMessageSummary';
 import { formatSADateShort } from '../utils/format';
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+  badge?: number;
 }
 
 export function DashboardLayout() {
@@ -37,10 +40,16 @@ export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
+  // Administrators have no messaging access, so they never poll for it.
+  const { summary: messageSummary, refresh: refreshMessageSummary } = useMessageSummary(
+    Boolean(currentUser) && currentUser?.role !== 'ADMIN',
+  );
+
   if (!currentUser) return null;
 
   const isSocialWorker = currentUser.role === 'SOCIAL_WORKER';
   const isAdmin = currentUser.role === 'ADMIN';
+  const messageBadge = messageSummary.unreadCount;
 
   const adminNav: NavItem[] = [
     { to: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -70,6 +79,12 @@ export function DashboardLayout() {
     },
     { to: '/parent/payments', label: 'Payments', icon: <CreditCard className="h-4 w-4" /> },
     { to: '/parent/history', label: 'Payment History', icon: <History className="h-4 w-4" /> },
+    {
+      to: '/parent/messages',
+      label: 'Messages',
+      icon: <MessageSquare className="h-4 w-4" />,
+      badge: messageBadge,
+    },
     { to: '/parent/reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4" /> },
     {
       to: '/parent/profile',
@@ -104,6 +119,12 @@ export function DashboardLayout() {
       label: 'Payment Concerns',
       icon: <AlertTriangle className="h-4 w-4" />,
     },
+    {
+      to: '/social-worker/messages',
+      label: 'Messages',
+      icon: <MessageSquare className="h-4 w-4" />,
+      badge: messageBadge,
+    },
     { to: '/social-worker/reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4" /> },
     {
       to: '/social-worker/profile',
@@ -117,6 +138,8 @@ export function DashboardLayout() {
     .filter((n) => n.userId === currentUser.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const unreadCount = userNotifications.filter((n) => !n.isRead).length;
+  const totalUnread = unreadCount + messageBadge;
+  const messagesPath = isSocialWorker ? '/social-worker/messages' : '/parent/messages';
 
   const handleLogout = async () => {
     try {
@@ -190,7 +213,15 @@ export function DashboardLayout() {
               className={navLinkClass}
             >
               {item.icon}
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {item.badge ? (
+                <span
+                  className="rounded-full bg-[#006847] px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums"
+                  aria-label={`${item.badge} unread`}
+                >
+                  {item.badge}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -231,9 +262,9 @@ export function DashboardLayout() {
                 >
                   <Bell className="h-4 w-4 text-[#0F2942]" />
                   <span className="hidden sm:inline">Notifications</span>
-                  {unreadCount > 0 && (
+                  {totalUnread > 0 && (
                     <span className="rounded-sm bg-[#006847] px-1.5 py-0.5 text-[11px] font-semibold text-white tabular-nums">
-                      {unreadCount}
+                      {totalUnread}
                     </span>
                   )}
                 </button>
@@ -242,7 +273,7 @@ export function DashboardLayout() {
                   <div className="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-sm border border-slate-200 bg-white shadow-md z-50">
                     <div className="flex items-center justify-between border-b border-slate-200 px-3.5 py-2.5">
                       <span className="text-xs font-semibold text-[#0F2942]">
-                        Notifications ({unreadCount} unread)
+                        Notifications ({totalUnread} unread)
                       </span>
                       {unreadCount > 0 && (
                         <button
@@ -255,7 +286,24 @@ export function DashboardLayout() {
                       )}
                     </div>
                     <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-                      {userNotifications.length === 0 ? (
+                      {messageSummary.conversations.map((item) => (
+                        <button
+                          key={item.conversationId}
+                          type="button"
+                          onClick={() => {
+                            setNotifOpen(false);
+                            navigate(`${messagesPath}?conversation=${item.conversationId}`);
+                          }}
+                          className="block w-full bg-emerald-50/40 px-3.5 py-2.5 text-left hover:bg-slate-50"
+                        >
+                          <p className="text-xs font-semibold text-[#0F2942]">New message from {item.senderName}</p>
+                          <p className="mt-0.5 text-xs text-slate-600">
+                            {item.unreadCount} unread {item.unreadCount === 1 ? 'message' : 'messages'} about {item.childName}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-400">{formatSADateShort(item.lastMessageAt)}</p>
+                        </button>
+                      ))}
+                      {userNotifications.length === 0 && messageSummary.conversations.length === 0 ? (
                         <p className="p-4 text-xs text-slate-500">No notifications yet.</p>
                       ) : (
                         userNotifications.slice(0, 8).map((n) => (
@@ -297,7 +345,7 @@ export function DashboardLayout() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto">
-          <Outlet />
+          <Outlet context={{ refreshMessageSummary }} />
         </main>
       </div>
     </div>

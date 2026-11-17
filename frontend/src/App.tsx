@@ -13,6 +13,7 @@ import { AdminSocialWorkers } from './pages/admin/AdminSocialWorkers';
 import { ArrangementsPage } from './pages/parent/ArrangementsPage';
 import { ChildrenPage } from './pages/parent/ChildrenPage';
 import { ParentDashboard } from './pages/parent/ParentDashboard';
+import { ParentMessagesPage } from './pages/parent/ParentMessagesPage';
 import { ParentPaymentHistoryPage } from './pages/parent/ParentPaymentHistoryPage';
 import { ParentProfilePage } from './pages/parent/ParentProfilePage';
 import { ParentReportsPage } from './pages/parent/ParentReportsPage';
@@ -27,6 +28,7 @@ import { AssignedFamiliesPage } from './pages/social-worker/AssignedFamiliesPage
 import { PaymentConcernsPage } from './pages/social-worker/PaymentConcernsPage';
 import { SocialWorkerChildrenPage } from './pages/social-worker/SocialWorkerChildrenPage';
 import { SocialWorkerDashboard } from './pages/social-worker/SocialWorkerDashboard';
+import { SocialWorkerMessagesPage } from './pages/social-worker/SocialWorkerMessagesPage';
 import { SocialWorkerPaymentRecordsPage } from './pages/social-worker/SocialWorkerPaymentRecordsPage';
 import { SocialWorkerProfilePage } from './pages/social-worker/SocialWorkerProfilePage';
 import { SocialWorkerReportsPage } from './pages/social-worker/SocialWorkerReportsPage';
@@ -62,6 +64,7 @@ export default function App() {
               <Route path="payments" element={<PaymentsPage />} />
               <Route path="history" element={<ParentPaymentHistoryPage />} />
               <Route path="reports" element={<ParentReportsPage />} />
+              <Route path="messages" element={<ParentMessagesPage />} />
               <Route path="profile" element={<ParentProfilePage />} />
             </Route>
 
@@ -80,6 +83,7 @@ export default function App() {
               <Route path="payments" element={<SocialWorkerPaymentRecordsPage />} />
               <Route path="concerns" element={<PaymentConcernsPage />} />
               <Route path="reports" element={<SocialWorkerReportsPage />} />
+              <Route path="messages" element={<SocialWorkerMessagesPage />} />
               <Route path="profile" element={<SocialWorkerProfilePage />} />
             </Route>
 
