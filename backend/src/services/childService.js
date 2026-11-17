@@ -68,13 +68,10 @@ function createChildService({ sql, jwtSecret, assignmentService }) {
       FROM children c
       LEFT JOIN family_relationships fr ON fr.child_id = c.id
       LEFT JOIN users u ON u.id = fr.user_id
-      WHERE (
-        ${role} = 'PARENT_CAREGIVER' AND (
-          c.created_by = ${userId}
-          OR EXISTS (
-            SELECT 1 FROM family_relationships own
-            WHERE own.child_id = c.id AND own.user_id = ${userId}
-          )
+      WHERE c.archived_at IS NULL AND ((
+        ${role} = 'PARENT_CAREGIVER' AND EXISTS (
+          SELECT 1 FROM family_relationships own
+          WHERE own.child_id = c.id AND own.user_id = ${userId}
         )
       ) OR (
         ${role} = 'SOCIAL_WORKER'
@@ -83,7 +80,7 @@ function createChildService({ sql, jwtSecret, assignmentService }) {
           WHERE a.child_id = c.id AND a.social_worker_id = ${userId}
             AND a.assignment_status = 'ACTIVE'
         )
-      )
+      ))
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `;

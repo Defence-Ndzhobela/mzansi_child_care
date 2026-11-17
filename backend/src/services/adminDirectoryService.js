@@ -39,13 +39,13 @@ function createAdminDirectoryService({ sql, assignmentService }) {
            EXISTS (SELECT 1 FROM maintenance_arrangements m WHERE m.paying_user_id = u.id)
            OR EXISTS (SELECT 1 FROM family_relationships fr
                       WHERE fr.user_id = u.id AND fr.relationship_type = 'PAYING_PARENT'))) AS child_supporters,
-        (SELECT count(*)::int FROM children) AS children,
+        (SELECT count(*)::int FROM children WHERE archived_at IS NULL) AS children,
         (SELECT count(*)::int FROM social_worker_assignments WHERE assignment_status = 'ACTIVE') AS active_assignments,
         (SELECT count(*)::int FROM maintenance_arrangements WHERE status = 'ACTIVE') AS active_arrangements,
         (SELECT count(*)::int FROM payments WHERE status IN ('SUBMITTED', 'AWAITING_CONFIRMATION')) AS pending_payments,
         (SELECT count(*)::int FROM payments WHERE status IN ('CONFIRMED_BY_RECIPIENT', 'PARTIALLY_CONFIRMED')) AS completed_payments,
         (SELECT count(*)::int FROM payments WHERE status = 'DISPUTED') AS disputed_payments,
-        (SELECT count(*)::int FROM children c WHERE NOT EXISTS (
+        (SELECT count(*)::int FROM children c WHERE c.archived_at IS NULL AND NOT EXISTS (
            SELECT 1 FROM social_worker_assignments a
            WHERE a.child_id = c.id AND a.assignment_status = 'ACTIVE')) AS children_without_worker
     `;
@@ -169,7 +169,8 @@ function createAdminDirectoryService({ sql, assignmentService }) {
               WHERE a.child_id = c.id AND a.assignment_status = 'ACTIVE' LIMIT 1) AS social_worker,
              count(*) OVER ()::int AS total
       FROM children c
-      WHERE (${search}::text IS NULL
+      WHERE c.archived_at IS NULL
+        AND (${search}::text IS NULL
              OR (c.first_name || ' ' || c.last_name) ILIKE ${search} ESCAPE '!'
              OR EXISTS (SELECT 1 FROM family_relationships fr JOIN users p ON p.id = fr.user_id
                         WHERE fr.child_id = c.id AND (p.full_name ILIKE ${search} ESCAPE '!'
@@ -197,13 +198,13 @@ function createAdminDirectoryService({ sql, assignmentService }) {
   async function getChild(id) {
     const children = await sql`
       SELECT id, first_name, last_name, date_of_birth::text AS date_of_birth, created_at FROM children
-      WHERE id = ${id}::uuid
+      WHERE id = ${id}::uuid AND archived_at IS NULL
     `;
     if (!children.length) throw new ApiError(404, "Child not found.");
     const child = children[0];
 
     const parents = await sql`
-      SELECT p.id, p.full_name, p.email, p.phone, fr.relationship_type, fr.is_primary_caregiver
+      SELECT fr.id AS relationship_id, p.id, p.full_name, p.email, p.phone, fr.relationship_type, fr.is_primary_caregiver
       FROM family_relationships fr JOIN users p ON p.id = fr.user_id
       WHERE fr.child_id = ${id}::uuid
       ORDER BY fr.created_at
@@ -229,13 +230,17 @@ function createAdminDirectoryService({ sql, assignmentService }) {
     return {
       id: child.id,
       fullName: `${child.first_name} ${child.last_name}`,
+      firstName: child.first_name,
+      lastName: child.last_name,
       dateOfBirth: child.date_of_birth,
       createdAt: child.created_at,
       parents: parents.map((row) => ({
+        relationshipId: row.relationship_id,
         id: row.id,
         fullName: row.full_name,
         email: row.email,
         phone: row.phone || "",
+        relationshipType: row.relationship_type,
         relationship: relationshipLabel(row.relationship_type, "Caregiver"),
         isPrimaryCaregiver: row.is_primary_caregiver,
       })),
@@ -326,7 +331,7 @@ function createAdminDirectoryService({ sql, assignmentService }) {
     const unassigned = await sql`
       SELECT c.id, c.first_name || ' ' || c.last_name AS child_name, c.created_at
       FROM children c
-      WHERE NOT EXISTS (SELECT 1 FROM social_worker_assignments a
+      WHERE c.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM social_worker_assignments a
                         WHERE a.child_id = c.id AND a.assignment_status = 'ACTIVE')
       ORDER BY c.created_at DESC LIMIT 50
     `;
