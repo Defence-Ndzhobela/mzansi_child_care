@@ -7,28 +7,32 @@ const { createArrangementController } = require("./controllers/arrangementContro
 const { createAssignmentController } = require("./controllers/assignmentController");
 const { createChildController } = require("./controllers/childController");
 const { createFamilyController } = require("./controllers/familyController");
+const { createMessageController } = require("./controllers/messageController");
 const { createPaymentController } = require("./controllers/paymentController");
 const { createSocialWorkerController } = require("./controllers/socialWorkerController");
 const { createAuthenticate } = require("./middleware/authMiddleware");
 const { createCorsMiddleware } = require("./middleware/corsMiddleware");
 const { errorMiddleware } = require("./middleware/errorMiddleware");
-const { createChildIdRateLimit } = require("./middleware/rateLimitMiddleware");
+const { createChildIdRateLimit, createMessageRateLimit } = require("./middleware/rateLimitMiddleware");
 const { createAdminRoutes } = require("./routes/adminRoutes");
 const { createArrangementRoutes } = require("./routes/arrangementRoutes");
 const { createAssignmentRoutes } = require("./routes/assignmentRoutes");
 const { createAuthRoutes } = require("./routes/authRoutes");
 const { createChildRoutes } = require("./routes/childRoutes");
 const { createFamilyRoutes } = require("./routes/familyRoutes");
+const { createMessageRoutes } = require("./routes/messageRoutes");
 const { createPaymentRoutes } = require("./routes/paymentRoutes");
 const { createSocialWorkerRoutes } = require("./routes/socialWorkerRoutes");
 const { createAdminAssignmentService } = require("./services/adminAssignmentService");
 const { createAdminDirectoryService } = require("./services/adminDirectoryService");
+const { createAdminFamilyService } = require("./services/adminFamilyService");
 const { createAdminSocialWorkerService } = require("./services/adminSocialWorkerService");
 const { createArrangementService } = require("./services/arrangementService");
 const { createAssignmentService } = require("./services/assignmentService");
 const { createAuthService } = require("./services/authService");
 const { createChildService } = require("./services/childService");
 const { createFamilyService } = require("./services/familyService");
+const { createMessageService } = require("./services/messageService");
 const { createPaymentService } = require("./services/paymentService");
 const asyncHandler = require("./utils/asyncHandler");
 
@@ -50,6 +54,7 @@ function createApp({
     socialWorkerService: createAdminSocialWorkerService({ sql }),
     assignmentService: adminAssignmentService,
     directoryService: createAdminDirectoryService({ sql, assignmentService: adminAssignmentService }),
+    familyService: createAdminFamilyService({ sql }),
   });
 
   const authenticate = createAuthenticate(authService);
@@ -95,6 +100,11 @@ function createApp({
     authenticate,
   }));
   app.use("/api/admin", createAdminRoutes({ adminController, authenticate }));
+  app.use("/api/messages", createMessageRoutes({
+    messageController: createMessageController({ messageService: createMessageService({ sql }) }),
+    authenticate,
+    messageRateLimit: createMessageRateLimit(),
+  }));
   app.use("/api/social-worker", createSocialWorkerRoutes({
     socialWorkerController: createSocialWorkerController({ childService, arrangementService, paymentService }),
     authenticate,
