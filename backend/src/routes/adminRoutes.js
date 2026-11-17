@@ -2,9 +2,9 @@ const express = require("express");
 const asyncHandler = require("../utils/asyncHandler");
 const { requireRole } = require("../middleware/roleMiddleware");
 const {
-  validateArrangementStatusFilter, validateAssignmentIdFilters, validateAssignmentStatusFilter,
-  validateCreateAssignment, validateCreateSocialWorker, validateId, validateReassignment,
-  validateUpdateSocialWorker, validateWorkerStatusFilter,
+  validateAddFamilyMember, validateArrangementStatusFilter, validateAssignmentIdFilters, validateAssignmentStatusFilter,
+  validateCreateAssignment, validateCreateSocialWorker, validateFamilyMemberIds, validateId, validateReassignment,
+  validateUpdateFamilyChild, validateUpdateFamilyMember, validateUpdateSocialWorker, validateWorkerStatusFilter,
 } = require("../validators/adminValidator");
 
 // Mounted at /api/admin. The single `router.use` below puts authentication and the ADMIN role check in
@@ -32,6 +32,11 @@ function createAdminRoutes({ adminController, authenticate }) {
 
   router.get("/children", asyncHandler(adminController.listChildren));
   router.get("/children/:id", validateId, asyncHandler(adminController.getChild));
+  router.put("/children/:id", validateUpdateFamilyChild, asyncHandler(adminController.updateChild));
+  router.delete("/children/:id", validateId, asyncHandler(adminController.archiveFamily));
+  router.post("/children/:id/family", validateAddFamilyMember, asyncHandler(adminController.addFamilyMember));
+  router.put("/children/:id/family/:relationshipId", validateUpdateFamilyMember, asyncHandler(adminController.updateFamilyMember));
+  router.delete("/children/:id/family/:relationshipId", validateFamilyMemberIds, asyncHandler(adminController.removeFamilyMember));
 
   router.get("/maintenance-arrangements", validateArrangementStatusFilter, asyncHandler(adminController.listArrangements));
   router.get("/maintenance-arrangements/:id", validateId, asyncHandler(adminController.getArrangement));

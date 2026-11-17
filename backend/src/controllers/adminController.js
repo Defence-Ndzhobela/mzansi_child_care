@@ -3,7 +3,7 @@ const { parsePaging } = require("../utils/pagination");
 
 // HTTP only: each handler reads the validated request and calls a service. Every route is mounted behind
 // authentication and the ADMIN role check (see adminRoutes.js), and `req.user` comes from the database.
-function createAdminController({ socialWorkerService, assignmentService, directoryService }) {
+function createAdminController({ socialWorkerService, assignmentService, directoryService, familyService }) {
   return {
     me: (req, res) => sendSuccess(res, { user: req.user }),
 
@@ -53,6 +53,25 @@ function createAdminController({ socialWorkerService, assignmentService, directo
     },
     async getChild(req, res) {
       return sendSuccess(res, { child: await directoryService.getChild(req.validated.id) });
+    },
+    async updateChild(req, res) {
+      await familyService.updateChild(req.validated);
+      return sendSuccess(res, { child: await directoryService.getChild(req.validated.id) });
+    },
+    async addFamilyMember(req, res) {
+      await familyService.addMember(req.validated);
+      return sendSuccess(res, { child: await directoryService.getChild(req.validated.id) }, 201);
+    },
+    async updateFamilyMember(req, res) {
+      await familyService.updateMember(req.validated);
+      return sendSuccess(res, { child: await directoryService.getChild(req.validated.id) });
+    },
+    async removeFamilyMember(req, res) {
+      await familyService.removeMember(req.validated);
+      return sendSuccess(res, { child: await directoryService.getChild(req.validated.id) });
+    },
+    async archiveFamily(req, res) {
+      return sendSuccess(res, await familyService.archiveFamily(req.user, req.validated));
     },
 
     async listArrangements(req, res) {
