@@ -1,5 +1,5 @@
 -- ============================================================================
--- MZANSI CHILDCARE — POSTGRESQL DATABASE SCHEMA (11 APPLICATION TABLES)
+-- MZANSI CHILDCARE — POSTGRESQL DATABASE SCHEMA (13 APPLICATION TABLES)
 -- ============================================================================
 -- Purpose: Backend database design for tracking child maintenance
 --          arrangements, payment submissions, recipient confirmations,
@@ -53,7 +53,12 @@ CREATE TABLE children (
     created_by      UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     national_id_lookup_hash CHAR(64),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Set when an administrator archives the family (migration 007). The removed family links are
+    -- copied into archived_family so history is kept.
+    archived_at     TIMESTAMPTZ,
+    archived_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+    archived_family JSONB
 );
 
 CREATE INDEX idx_children_created_by ON children(created_by);
@@ -349,6 +354,58 @@ CREATE TABLE professional_notes (
 
 CREATE INDEX idx_prof_notes_child ON professional_notes(child_id);
 CREATE INDEX idx_prof_notes_worker ON professional_notes(social_worker_id);
+
+-- ----------------------------------------------------------------------------
+-- 11. CONVERSATIONS
+-- A private conversation between a parent and the social worker assigned to their child. One per
+-- (parent, child, worker); whether it can still receive messages is derived from the live ACTIVE
+-- social_worker_assignments row, so history survives a reassignment. Foreign keys are RESTRICT.
+-- ----------------------------------------------------------------------------
+CREATE TABLE conversations (
+    id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_user_id              UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    social_worker_id            UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    child_id                    UUID NOT NULL REFERENCES children(id) ON DELETE RESTRICT,
+    maintenance_arrangement_id  UUID,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_conversation_distinct_users CHECK (parent_user_id <> social_worker_id),
+    CONSTRAINT uq_conversation_parent_child_worker UNIQUE (parent_user_id, child_id, social_worker_id),
+    CONSTRAINT fk_conversation_arrangement_child
+        FOREIGN KEY (maintenance_arrangement_id, child_id)
+        REFERENCES maintenance_arrangements (id, child_id)
+        ON DELETE SET NULL (maintenance_arrangement_id)
+);
+
+CREATE INDEX idx_conversations_parent ON conversations (parent_user_id, updated_at DESC);
+CREATE INDEX idx_conversations_social_worker ON conversations (social_worker_id, updated_at DESC);
+CREATE INDEX idx_conversations_child ON conversations (child_id);
+CREATE INDEX idx_conversations_arrangement
+    ON conversations (maintenance_arrangement_id) WHERE maintenance_arrangement_id IS NOT NULL;
+
+-- ----------------------------------------------------------------------------
+-- 12. MESSAGES
+-- Messages are history: triggers allow only the two people in the conversation to send, forbid editing
+-- the text, and allow the read flag to change only from unread to read.
+-- ----------------------------------------------------------------------------
+CREATE TABLE messages (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id     UUID NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    sender_id           UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    message             TEXT NOT NULL,
+    is_read             BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at             TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_message_not_blank CHECK (char_length(btrim(message)) > 0),
+    CONSTRAINT chk_message_length CHECK (char_length(message) <= 2000),
+    CONSTRAINT chk_message_read_state CHECK (is_read = (read_at IS NOT NULL))
+);
+
+CREATE INDEX idx_messages_conversation_created ON messages (conversation_id, created_at DESC, id DESC);
+CREATE INDEX idx_messages_unread ON messages (conversation_id, sender_id) WHERE is_read = FALSE;
+CREATE INDEX idx_messages_sender ON messages (sender_id);
+-- The guard functions and triggers (enforce_message_sender, protect_message_history) are defined in
+-- database/migrations/006_messaging.sql.
 
 -- ============================================================================
 -- Fictional demo data lives in database/seeds/demoData.sql (development only).

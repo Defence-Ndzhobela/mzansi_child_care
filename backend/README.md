@@ -18,7 +18,7 @@ backend/
 │   └── utils/                apiResponse, asyncHandler, encryptIdNumber, payment summary, helpers
 ├── database/
 │   ├── schema.sql            current full schema (for a brand-new database)
-│   ├── migrations/           001_initial_schema.sql … 005_admin_dashboard.sql
+│   ├── migrations/           001_initial_schema.sql … 006_messaging.sql
 │   ├── rollbacks/            005_admin_dashboard.rollback.sql (run by hand, never automatic)
 │   ├── seedAdmin.js          creates/updates the administrator (npm run admin:seed)
 │   ├── seeds/demoData.sql    fictional demo users and records (development only)
@@ -244,3 +244,35 @@ user as the decision maker.
 `npm test` includes `tests/maintenance.integration.test.js`, which runs against
 the Neon database in `DATABASE_URL`. It creates accounts tagged with a per-run
 id and deletes them afterwards. It is skipped when `DATABASE_URL` is not set.
+
+## Parent / social worker messaging
+
+Run `database/migrations/006_messaging.sql` (`npm run db:migrate`, or paste it into the Neon SQL
+editor) to create `conversations` and `messages`. `database/rollbacks/006_messaging.rollback.sql`
+undoes it by hand and **deletes all messages**.
+
+All routes are under `/api/messages` and need a signed-in `PARENT_CAREGIVER` or `SOCIAL_WORKER`.
+Administrators get 403: there is no admin route to message contents.
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `GET /api/messages/contacts` | Who the user may start a conversation with: a parent's linked children that have an ACTIVE social worker; a worker's actively assigned children with their linked parents. Includes the arrangements both sides share. |
+| `GET /api/messages/conversations` | The user's conversations with unread counts, last message and `canSend`. Filters: `search` (names and message text), `childId`, `unread=true`. |
+| `POST /api/messages/conversations` | `{ childId, arrangementId? }` from a parent; a worker also sends `parentUserId`. The worker is always the child's ACTIVE assignment, never a client value. Returns the existing conversation (200) for the same parent, child and worker instead of a duplicate (201 when new). |
+| `GET /api/messages/conversations/:id` | One conversation. 404 for anyone who is not one of its two people, so IDs cannot be probed. |
+| `GET /api/messages/conversations/:id/messages` | Oldest first, `limit` (max 100) and `before=<messageId>` to page backwards. Does not mark anything read. |
+| `POST /api/messages/conversations/:id/messages` | `{ message }`, 1 to 2000 characters of plain text. The sender is the signed-in user. 403 once the worker is no longer assigned. Limited to 30 per minute per user. |
+| `PATCH /api/messages/:id/read` | Marks one received message read (idempotent). Messages you sent cannot be marked. |
+| `PATCH /api/messages/conversations/:id/read` | Marks everything received in the conversation read. |
+| `GET /api/messages/unread-count` | `{ unreadCount, conversations[] }` for the sidebar badge and notification bell. Names the sender and child only, never message text. |
+
+A parent must still be linked to the child (`family_relationships`) to read or send; a worker
+must hold the ACTIVE assignment to send. When an assignment ends or is reassigned, the
+conversation stays readable by its two people but becomes read-only, and the new worker gets a
+separate conversation. Messages are never deleted by the API, and the database blocks edits,
+un-reading, foreign senders and deleting a conversation that has messages. Message text is never
+logged. Real-time updates are polling (5 s in an open conversation, 15 s for the badge); the
+frontend `usePolling` hook is the single place to swap for WebSockets later.
+
+`tests/messaging.integration.test.js` runs against Neon like the other integration suites, and
+skips with a reminder until migration 006 has been applied.

@@ -111,6 +111,26 @@ erDiagram
         timestamptz updated_at
     }
 
+    CONVERSATIONS {
+        uuid id PK
+        uuid parent_user_id FK
+        uuid social_worker_id FK
+        uuid child_id FK
+        uuid maintenance_arrangement_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid conversation_id FK
+        uuid sender_id FK
+        text message
+        boolean is_read
+        timestamptz read_at
+        timestamptz created_at
+    }
+
     USERS ||--o{ CHILDREN : "creates (created_by)"
     USERS ||--o{ FAMILY_RELATIONSHIPS : "linked via"
     CHILDREN ||--o{ FAMILY_RELATIONSHIPS : "has caregivers"
@@ -130,3 +150,9 @@ erDiagram
     USERS ||--o{ PAYMENT_REVIEWS : "reviews"
     USERS ||--o{ PROFESSIONAL_NOTES : "writes"
     CHILDREN ||--o{ PROFESSIONAL_NOTES : "has case notes"
+    USERS ||--o{ CONVERSATIONS : "parent (parent_user_id)"
+    USERS ||--o{ CONVERSATIONS : "social worker (social_worker_id)"
+    CHILDREN ||--o{ CONVERSATIONS : "is the subject of"
+    MAINTENANCE_ARRANGEMENTS |o--o{ CONVERSATIONS : "optionally discussed in"
+    CONVERSATIONS ||--o{ MESSAGES : "contains"
+    USERS ||--o{ MESSAGES : "sends"
