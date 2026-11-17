@@ -1,9 +1,12 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { adminApi } from '../../services/adminApi';
 import { useAdminDetail } from '../../hooks/useAdminDetail';
 import { useAdminList } from '../../hooks/useAdminList';
 import { calculateAge, formatSADate, formatSADateShort } from '../../utils/format';
 import { ArrangementTable } from '../../components/admin/ArrangementTable';
+import { ConfirmDialog } from '../../components/admin/ConfirmDialog';
+import { FamilyManager } from '../../components/admin/FamilyManager';
+import { AdminChildDetail } from '../../types/admin';
 import { ListFrame, TABLE_HEAD, TD, TH } from '../../components/admin/ListFrame';
 import { Pagination } from '../../components/admin/Pagination';
 import { StatusPill } from '../../components/admin/StatusPill';
@@ -15,7 +18,38 @@ export function AdminChildren() {
   const list = useAdminList(adminApi.listChildren, {}, PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const detail = useAdminDetail(openId, adminApi.getChild);
+  const [updated, setUpdated] = useState<AdminChildDetail | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const child = updated && updated.id === openId ? updated : detail.data;
   const data = list.data;
+
+  const closeDetail = () => {
+    setOpenId(null);
+    setUpdated(null);
+  };
+
+  const handleChanged = (next: AdminChildDetail) => {
+    setUpdated(next);
+    list.reload();
+  };
+
+  const archiveFamily = async () => {
+    if (!openId) return;
+    setArchiveBusy(true);
+    setArchiveError(null);
+    try {
+      await adminApi.archiveFamily(openId);
+      setArchiving(false);
+      closeDetail();
+      list.reload();
+    } catch (failure) {
+      setArchiveError(failure instanceof Error ? failure.message : 'The family could not be archived.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
 
   return (
     <>
@@ -67,54 +101,41 @@ export function AdminChildren() {
         </table>
       </ListFrame>
 
-      <Modal isOpen={Boolean(openId)} onClose={() => setOpenId(null)} title={detail.data?.fullName ?? 'Child'} subtitle={detail.data ? `Born ${formatSADate(detail.data.dateOfBirth)}` : undefined} maxWidth="2xl">
-        {detail.loading && <p role="status" className="py-6 text-center text-sm text-slate-600">Loading…</p>}
+      <Modal isOpen={Boolean(openId)} onClose={closeDetail} title={child?.fullName ?? 'Child'} subtitle={child ? `Born ${formatSADate(child.dateOfBirth)}` : undefined} maxWidth="2xl">
+        {detail.loading && <p role="status" className="py-6 text-center text-sm text-slate-600">Loadingâ€¦</p>}
         {detail.error && <p role="alert" className="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{detail.error}</p>}
-        {detail.data && (
+        {child && (
           <div className="space-y-6">
-            <section>
-              <h3 className="mb-2 text-sm font-semibold text-[#0F2942]">Parents and caregivers</h3>
-              <ul className="divide-y divide-slate-100 rounded-sm border border-slate-200">
-                {detail.data.parents.map((parent) => (
-                  <li key={parent.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm">
-                    <span>
-                      <span className="font-medium text-[#0F2942]">{parent.fullName}</span>
-                      <span className="ml-2 text-xs text-slate-600">{parent.relationship}{parent.isPrimaryCaregiver ? ' · Primary' : ''}</span>
-                    </span>
-                    <span className="text-xs text-slate-600">{parent.email}{parent.phone ? ` · ${parent.phone}` : ''}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <FamilyManager child={child} onChanged={handleChanged} onArchive={() => { setArchiveError(null); setArchiving(true); }} />
 
             <section>
               <h3 className="mb-2 text-sm font-semibold text-[#0F2942]">Social worker</h3>
               <p className="text-sm text-slate-700">
-                {detail.data.currentAssignment
-                  ? <>Currently <strong>{detail.data.currentAssignment.socialWorker.fullName}</strong>, assigned {formatSADate(detail.data.currentAssignment.assignedAt)} by {detail.data.currentAssignment.assignedBy.fullName}.</>
+                {child.currentAssignment
+                  ? <>Currently <strong>{child.currentAssignment.socialWorker.fullName}</strong>, assigned {formatSADate(child.currentAssignment.assignedAt)} by {child.currentAssignment.assignedBy.fullName}.</>
                   : 'No social worker is currently assigned.'}
               </p>
             </section>
 
             <section>
               <h3 className="mb-2 text-sm font-semibold text-[#0F2942]">Maintenance arrangements</h3>
-              <ArrangementTable arrangements={detail.data.arrangements} />
+              <ArrangementTable arrangements={child.arrangements} />
             </section>
 
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-[#0F2942]">Assignment history ({detail.data.assignmentHistory.length})</h3>
-              {detail.data.assignmentHistory.length === 0 ? (
+              <h3 className="mb-2 text-sm font-semibold text-[#0F2942]">Assignment history ({child.assignmentHistory.length})</h3>
+              {child.assignmentHistory.length === 0 ? (
                 <p className="text-sm text-slate-600">No assignments yet.</p>
               ) : (
                 <ul className="divide-y divide-slate-100 rounded-sm border border-slate-200">
-                  {detail.data.assignmentHistory.map((item) => (
+                  {child.assignmentHistory.map((item) => (
                     <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm">
                       <span className="flex items-center gap-2">
                         <span className="font-medium text-[#0F2942]">{item.socialWorker.fullName}</span>
                         <StatusPill status={item.status} />
                       </span>
                       <span className="text-xs text-slate-600">
-                        {formatSADateShort(item.assignedAt)}{item.endedAt ? ` – ${formatSADateShort(item.endedAt)}` : ' – now'} · by {item.assignedBy.fullName}
+                        {formatSADateShort(item.assignedAt)}{item.endedAt ? ` â€“ ${formatSADateShort(item.endedAt)}` : ' â€“ now'} Â· by {item.assignedBy.fullName}
                       </span>
                     </li>
                   ))}
@@ -124,6 +145,22 @@ export function AdminChildren() {
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        isOpen={archiving}
+        title="Archive family"
+        tone="danger"
+        confirmLabel="Archive family"
+        busy={archiveBusy}
+        error={archiveError ?? undefined}
+        message={child && (
+          <>Archive <strong>{child.fullName}</strong>'s family? All parent and caregiver links will be removed, the social worker
+          assignment will be closed and active arrangements cancelled. Parent accounts, payment history, evidence, confirmations and
+          professional records are kept.</>
+        )}
+        onConfirm={() => void archiveFamily()}
+        onCancel={() => setArchiving(false)}
+      />
     </>
   );
 }

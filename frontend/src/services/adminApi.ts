@@ -79,6 +79,16 @@ export const adminApi = {
 
   listChildren: (params: ListParams) => request<Page<AdminChild>>(`/children${query(params)}`),
   getChild: (id: string) => request<{ child: AdminChildDetail }>(`/children/${id}`).then((r) => r.child),
+  updateChild: (id: string, input: { firstName: string; lastName: string; dateOfBirth: string }) =>
+    request<{ child: AdminChildDetail }>(`/children/${id}`, { method: 'PUT', body: json(input) }).then((r) => r.child),
+  addFamilyMember: (id: string, input: { email: string; relationshipType: string; isPrimaryCaregiver: boolean }) =>
+    request<{ child: AdminChildDetail }>(`/children/${id}/family`, { method: 'POST', body: json(input) }).then((r) => r.child),
+  updateFamilyMember: (id: string, relationshipId: string, input: { relationshipType: string; isPrimaryCaregiver: boolean }) =>
+    request<{ child: AdminChildDetail }>(`/children/${id}/family/${relationshipId}`, { method: 'PUT', body: json(input) })
+      .then((r) => r.child),
+  removeFamilyMember: (id: string, relationshipId: string) =>
+    request<{ child: AdminChildDetail }>(`/children/${id}/family/${relationshipId}`, { method: 'DELETE' }).then((r) => r.child),
+  archiveFamily: (id: string) => request<{ outcome: 'ARCHIVED' }>(`/children/${id}`, { method: 'DELETE' }),
 
   listArrangements: (params: ListParams) => request<Page<AdminArrangement>>(`/maintenance-arrangements${query(params)}`),
   getArrangement: (id: string) =>

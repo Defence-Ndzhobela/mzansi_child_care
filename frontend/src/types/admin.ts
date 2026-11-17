@@ -149,13 +149,17 @@ export interface AdminChild {
 export interface AdminChildDetail {
   id: string;
   fullName: string;
+  firstName: string;
+  lastName: string;
   dateOfBirth: string;
   createdAt: string;
   parents: {
+    relationshipId: string;
     id: string;
     fullName: string;
     email: string;
     phone: string;
+    relationshipType: string;
     relationship: string;
     isPrimaryCaregiver: boolean;
   }[];
