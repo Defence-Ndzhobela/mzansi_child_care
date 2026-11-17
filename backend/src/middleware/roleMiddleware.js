@@ -8,4 +8,11 @@ function requireRole(role) {
   };
 }
 
-module.exports = { requireRole };
+function requireAnyRole(...roles) {
+  return (req, _res, next) => {
+    if (!roles.includes(req.user?.role)) return next(new ApiError(403, "Access denied."));
+    return next();
+  };
+}
+
+module.exports = { requireAnyRole, requireRole };

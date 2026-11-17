@@ -21,4 +21,22 @@ function createChildIdRateLimit() {
   };
 }
 
-module.exports = { createChildIdRateLimit };
+const MESSAGE_WINDOW_MS = 60 * 1000;
+const MAX_MESSAGES_PER_WINDOW = 30;
+
+// Limits how many messages (or new conversations) one user can send per minute. Also in memory.
+function createMessageRateLimit() {
+  const sent = new Map();
+  return (req, _res, next) => {
+    const now = Date.now();
+    const recent = (sent.get(req.user.id) || []).filter((time) => now - time < MESSAGE_WINDOW_MS);
+    if (recent.length >= MAX_MESSAGES_PER_WINDOW) {
+      return next(new ApiError(429, "You are sending messages too quickly. Please wait a moment."));
+    }
+    recent.push(now);
+    sent.set(req.user.id, recent);
+    return next();
+  };
+}
+
+module.exports = { createChildIdRateLimit, createMessageRateLimit };
