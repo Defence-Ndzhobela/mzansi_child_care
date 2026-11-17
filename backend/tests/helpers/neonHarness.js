@@ -27,6 +27,13 @@ async function insertSocialWorker(sql, { email, fullName, status = "ACTIVE" }) {
 async function deleteTestData(sql, emailPrefix) {
   const owners = "SELECT id FROM users WHERE email LIKE $1";
   const like = [`${emailPrefix}%`];
+  // Conversations restrict deletion of their users and children, so they go first. The tables only
+  // exist once migration 006 has been applied.
+  if ((await sql.query("SELECT to_regclass('public.conversations') AS name"))[0].name) {
+    const conversations = `SELECT id FROM conversations WHERE parent_user_id IN (${owners}) OR social_worker_id IN (${owners})`;
+    await sql.query(`DELETE FROM messages WHERE conversation_id IN (${conversations})`, like);
+    await sql.query(`DELETE FROM conversations WHERE id IN (${conversations})`, like);
+  }
   await sql.query(`DELETE FROM payments WHERE paying_user_id IN (${owners}) OR receiving_user_id IN (${owners})`, like);
   await sql.query(`DELETE FROM maintenance_arrangements WHERE paying_user_id IN (${owners}) OR receiving_user_id IN (${owners})`, like);
   await sql.query(`DELETE FROM children WHERE created_by IN (${owners})`, like);
