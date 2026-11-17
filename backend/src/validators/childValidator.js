@@ -67,4 +67,4 @@ function validateUpdateChild(req, _res, next) {
   return next();
 }
 
-module.exports = { validateCreateChild, validateUpdateChild };
+module.exports = { isValidDateOfBirth, isValidName, validateCreateChild, validateUpdateChild };

@@ -1,5 +1,7 @@
 const { ApiError } = require("../utils/apiResponse");
+const { normalizeRelationshipType } = require("../utils/relationshipTypes");
 const { hasControlCharacters, hasOnlyAllowedKeys, isUuid } = require("../utils/validationHelpers");
+const { isValidDateOfBirth, isValidName } = require("./childValidator");
 
 const MAX_BCRYPT_BYTES = 72;
 const WORKER_STATUSES = ["ACTIVE", "INACTIVE"];
@@ -128,14 +130,72 @@ function validateAssignmentIdFilters(req, _res, next) {
   return next();
 }
 
+// Family management. The child comes from the URL; only the listed fields are accepted from the body.
+function validateUpdateFamilyChild(req, _res, next) {
+  if (!isUuid(req.params.id)) return next(new ApiError(404, "Family not found."));
+  const { body } = req;
+  if (!hasOnlyAllowedKeys(body, ["firstName", "lastName", "dateOfBirth"]) ||
+      !isValidName(body.firstName, 100) || !isValidName(body.lastName, 100) || !isValidDateOfBirth(body.dateOfBirth)) {
+    return next(new ApiError(400, "Enter a valid first and last name and a date of birth that is not in the future."));
+  }
+  req.validated = {
+    id: req.params.id, firstName: body.firstName.trim(), lastName: body.lastName.trim(), dateOfBirth: body.dateOfBirth,
+  };
+  return next();
+}
+
+function validateAddFamilyMember(req, _res, next) {
+  if (!isUuid(req.params.id)) return next(new ApiError(404, "Family not found."));
+  const { body } = req;
+  if (!hasOnlyAllowedKeys(body, ["email", "relationshipType", "isPrimaryCaregiver"])) {
+    return next(new ApiError(400, "The request contains fields that are not allowed."));
+  }
+  const relationshipType = normalizeRelationshipType(body.relationshipType);
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return next(new ApiError(400, "Enter the email address of the parent's account."));
+  }
+  if (!relationshipType || typeof body.isPrimaryCaregiver !== "boolean") {
+    return next(new ApiError(400, "Choose a valid relationship and caregiver status."));
+  }
+  req.validated = { id: req.params.id, email, relationshipType, isPrimaryCaregiver: body.isPrimaryCaregiver };
+  return next();
+}
+
+function validateFamilyMemberIds(req, _res, next) {
+  if (!isUuid(req.params.id) || !isUuid(req.params.relationshipId)) {
+    return next(new ApiError(404, "Family member not found."));
+  }
+  req.validated = { id: req.params.id, relationshipId: req.params.relationshipId };
+  return next();
+}
+
+function validateUpdateFamilyMember(req, res, next) {
+  validateFamilyMemberIds(req, res, (error) => {
+    if (error) return next(error);
+    const { body } = req;
+    const relationshipType = hasOnlyAllowedKeys(body, ["relationshipType", "isPrimaryCaregiver"])
+      ? normalizeRelationshipType(body.relationshipType) : null;
+    if (!relationshipType || typeof body.isPrimaryCaregiver !== "boolean") {
+      return next(new ApiError(400, "Choose a valid relationship and caregiver status."));
+    }
+    req.validated = { ...req.validated, relationshipType, isPrimaryCaregiver: body.isPrimaryCaregiver };
+    return next();
+  });
+}
+
 module.exports = {
+  validateAddFamilyMember,
   validateArrangementStatusFilter,
   validateAssignmentIdFilters,
   validateAssignmentStatusFilter,
   validateCreateAssignment,
   validateCreateSocialWorker,
+  validateFamilyMemberIds,
   validateId,
   validateReassignment,
+  validateUpdateFamilyChild,
+  validateUpdateFamilyMember,
   validateUpdateSocialWorker,
   validateWorkerStatusFilter,
 };
