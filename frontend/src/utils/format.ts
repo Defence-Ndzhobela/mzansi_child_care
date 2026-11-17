@@ -47,6 +47,38 @@ export function calculateAge(dob: string): number {
   return Math.max(0, age);
 }
 
+const SA_TIME_ZONE = 'Africa/Johannesburg';
+
+export function formatMessageTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', timeZone: SA_TIME_ZONE });
+}
+
+// The South African calendar day of a timestamp, used to group a conversation by day.
+export function messageDayKey(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-CA', { timeZone: SA_TIME_ZONE });
+}
+
+export function formatMessageDay(value: string): string {
+  const key = messageDayKey(value);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  if (key === today.toLocaleDateString('en-CA', { timeZone: SA_TIME_ZONE })) return 'Today';
+  if (key === yesterday.toLocaleDateString('en-CA', { timeZone: SA_TIME_ZONE })) return 'Yesterday';
+  return new Date(value).toLocaleDateString('en-ZA', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: SA_TIME_ZONE,
+  });
+}
+
+// Time for today's messages, a short date for older ones: the label next to a conversation.
+export function formatConversationTime(value: string): string {
+  if (!value) return '';
+  if (messageDayKey(value) === messageDayKey(new Date().toISOString())) return formatMessageTime(value);
+  return new Date(value).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', timeZone: SA_TIME_ZONE });
+}
+
 export function generateId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
