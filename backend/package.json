@@ -11,13 +11,14 @@
     "start": "node server.js",
     "db:migrate": "node database/migrate.js",
     "admin:seed": "node database/seedAdmin.js",
-    "test": "node --test tests/auth.test.js tests/child.test.js tests/family.test.js tests/encryptIdNumber.test.js tests/env.test.js tests/cors.test.js tests/maintenanceRules.test.js tests/maintenance.integration.test.js tests/assignment.integration.test.js tests/messaging.integration.test.js tests/messageValidator.test.js tests/adminFamily.integration.test.js"
+    "test": "node --test tests/auth.test.js tests/child.test.js tests/family.test.js tests/encryptIdNumber.test.js tests/env.test.js tests/cors.test.js tests/maintenanceRules.test.js tests/maintenance.integration.test.js tests/assignment.integration.test.js tests/messaging.integration.test.js tests/messageValidator.test.js tests/adminFamily.integration.test.js tests/ai.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",
     "bcryptjs": "^3.0.2",
     "dotenv": "^18.0.10",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "openai": "^7.34.0"
   }
 }
