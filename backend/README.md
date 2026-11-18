@@ -245,6 +245,23 @@ user as the decision maker.
 the Neon database in `DATABASE_URL`. It creates accounts tagged with a per-run
 id and deletes them afterwards. It is skipped when `DATABASE_URL` is not set.
 
+## AI assistant (public pages)
+
+`POST /api/ai/chat` powers the floating "Mzansi ChildCare Assistant" on the six public pages. It is
+public (no login) and is given **no account data**: only the visitor's own chat messages.
+
+| Item | Detail |
+| --- | --- |
+| Body | `{ "messages": [{ "role": "user" \| "assistant", "content": "…" }] }`, 1 to 12 messages, each up to 500 plain-text characters, ending with a `user` message. No `system` role and no other fields are accepted. |
+| Reply | `{ "reply": "…" }`. A provider failure, a missing key or a busy service gives a generic 503 and never includes provider text or the key. |
+| Knowledge | `src/config/assistantKnowledge.js` holds the system prompt: what is implemented, what is only planned, the legal limits and the developer answer. Edit it there. |
+| Privacy | Only the last 10 messages are sent. 13-digit ID numbers, email addresses and long digit strings are removed first. Requests use `store: false`. Message text is never logged. |
+| Limits | 20 requests per visitor (IP) per 5 minutes and 300 per hour overall. Behind Render set `TRUST_PROXY=true` so each visitor's real address is used. |
+
+Environment variables (backend only): `OPENAI_API_KEY` (optional; without it the assistant says it is
+unavailable), `OPENAI_MODEL` (default `gpt-4o-mini`) and `TRUST_PROXY`. The key is read in `server.js`
+and never reaches the frontend. `tests/ai.test.js` uses a fake client, so it needs no key and costs nothing.
+
 ## Parent / social worker messaging
 
 Run `database/migrations/006_messaging.sql` (`npm run db:migrate`, or paste it into the Neon SQL
