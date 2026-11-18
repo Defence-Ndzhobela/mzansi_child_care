@@ -39,4 +39,38 @@ function createMessageRateLimit() {
   };
 }
 
-module.exports = { createChildIdRateLimit, createMessageRateLimit };
+const AI_WINDOW_MS = 5 * 60 * 1000;
+const AI_MAX_PER_VISITOR = 20;
+const AI_GLOBAL_WINDOW_MS = 60 * 60 * 1000;
+const AI_MAX_GLOBAL = 300;
+
+// The assistant is public and every request costs money, so it has two limits: a per-visitor limit
+// (by IP address) and a global hourly ceiling that caps the total spend. In memory, like the others.
+function createAiRateLimit() {
+  const byVisitor = new Map();
+  let globalHits = [];
+  return (req, _res, next) => {
+    const now = Date.now();
+    globalHits = globalHits.filter((time) => now - time < AI_GLOBAL_WINDOW_MS);
+    if (globalHits.length >= AI_MAX_GLOBAL) {
+      return next(new ApiError(429, "The assistant is very busy right now. Please try again later."));
+    }
+    const key = req.ip || "unknown";
+    const recent = (byVisitor.get(key) || []).filter((time) => now - time < AI_WINDOW_MS);
+    if (recent.length >= AI_MAX_PER_VISITOR) {
+      return next(new ApiError(429, "You have asked a lot of questions in a short time. Please wait a few minutes."));
+    }
+    recent.push(now);
+    byVisitor.set(key, recent);
+    globalHits.push(now);
+    // Forget visitors whose window has passed so the map cannot grow without bound.
+    if (byVisitor.size > 5000) {
+      for (const [visitor, times] of byVisitor) {
+        if (times.every((time) => now - time >= AI_WINDOW_MS)) byVisitor.delete(visitor);
+      }
+    }
+    return next();
+  };
+}
+
+module.exports = { createAiRateLimit, createChildIdRateLimit, createMessageRateLimit };
