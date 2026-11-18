@@ -3,6 +3,7 @@ const { getDatabaseVersion } = require("./config/database");
 const { assertValidJwtSecret } = require("./config/env");
 const { createAuthController } = require("./controllers/authController");
 const { createAdminController } = require("./controllers/adminController");
+const { createAiController } = require("./controllers/aiController");
 const { createArrangementController } = require("./controllers/arrangementController");
 const { createAssignmentController } = require("./controllers/assignmentController");
 const { createChildController } = require("./controllers/childController");
@@ -13,8 +14,9 @@ const { createSocialWorkerController } = require("./controllers/socialWorkerCont
 const { createAuthenticate } = require("./middleware/authMiddleware");
 const { createCorsMiddleware } = require("./middleware/corsMiddleware");
 const { errorMiddleware } = require("./middleware/errorMiddleware");
-const { createChildIdRateLimit, createMessageRateLimit } = require("./middleware/rateLimitMiddleware");
+const { createAiRateLimit, createChildIdRateLimit, createMessageRateLimit } = require("./middleware/rateLimitMiddleware");
 const { createAdminRoutes } = require("./routes/adminRoutes");
+const { createAiRoutes } = require("./routes/aiRoutes");
 const { createArrangementRoutes } = require("./routes/arrangementRoutes");
 const { createAssignmentRoutes } = require("./routes/assignmentRoutes");
 const { createAuthRoutes } = require("./routes/authRoutes");
@@ -27,6 +29,7 @@ const { createAdminAssignmentService } = require("./services/adminAssignmentServ
 const { createAdminDirectoryService } = require("./services/adminDirectoryService");
 const { createAdminFamilyService } = require("./services/adminFamilyService");
 const { createAdminSocialWorkerService } = require("./services/adminSocialWorkerService");
+const { createAiService } = require("./services/aiService");
 const { createArrangementService } = require("./services/arrangementService");
 const { createAssignmentService } = require("./services/assignmentService");
 const { createAuthService } = require("./services/authService");
@@ -40,9 +43,11 @@ const asyncHandler = require("./utils/asyncHandler");
 // browser origins permitted to call the API; with none, any request carrying an Origin is rejected.
 function createApp({
   sql, jwtSecret, secureCookies = false, cookieSameSite = "strict", allowedOrigins = [],
+  trustProxy = false, ai = {},
 }) {
   assertValidJwtSecret(jwtSecret);
 
+  const aiService = createAiService(ai);
   const authService = createAuthService({ sql, jwtSecret });
   const assignmentService = createAssignmentService({ sql });
   const childService = createChildService({ sql, jwtSecret, assignmentService });
@@ -62,6 +67,7 @@ function createApp({
 
   const app = express();
   app.disable("x-powered-by");
+  if (trustProxy) app.set("trust proxy", 1);
   app.use(createCorsMiddleware(allowedOrigins));
   app.use(express.json({ limit: "8kb" }));
   app.use("/api", (_req, res, next) => {
@@ -100,6 +106,10 @@ function createApp({
     authenticate,
   }));
   app.use("/api/admin", createAdminRoutes({ adminController, authenticate }));
+  app.use("/api/ai", createAiRoutes({
+    aiController: createAiController({ aiService }),
+    aiRateLimit: createAiRateLimit(),
+  }));
   app.use("/api/messages", createMessageRoutes({
     messageController: createMessageController({ messageService: createMessageService({ sql }) }),
     authenticate,
