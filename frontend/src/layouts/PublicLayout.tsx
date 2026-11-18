@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { GovernmentBranding } from '../components/GovernmentBranding';
+import { ChatAssistant } from '../components/assistant/ChatAssistant';
 import { useAuth } from '../context/AuthContext';
 import { dashboardPathFor } from '../utils/roles';
 
@@ -172,6 +173,8 @@ export function PublicLayout() {
           {!isAuthPage && <GovernmentBranding className="max-w-2xl border-t border-slate-200 pt-4" />}
         </div>
       </footer>
+
+      <ChatAssistant />
     </div>
   );
 }
