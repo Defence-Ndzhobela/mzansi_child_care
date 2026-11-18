@@ -18,6 +18,8 @@ function start() {
     secureCookies: env.secureCookies,
     cookieSameSite: env.cookieSameSite,
     allowedOrigins: env.allowedOrigins,
+    trustProxy: env.trustProxy,
+    ai: { apiKey: env.openaiApiKey, model: env.openaiModel },
   });
   const listening = () => {
     console.log(`Server running on port ${env.port} (${env.nodeEnv}); public URL ${env.backendUrl}`);

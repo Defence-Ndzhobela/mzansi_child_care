@@ -91,6 +91,11 @@ function parseEnv(source, { databaseOnly = false } = {}) {
     allowedOrigins: Object.freeze([...new Set([frontendOrigin, backendOrigin, ...corsOrigins])]),
     cookieSameSite,
     secureCookies: isProduction || cookieSameSite === "none",
+    // Behind a reverse proxy (Render) the real visitor address is the proxy's forwarded one.
+    trustProxy: source.TRUST_PROXY === "true",
+    // Optional: without a key the assistant answers "not available" and nothing else is affected.
+    openaiApiKey: source.OPENAI_API_KEY || null,
+    openaiModel: source.OPENAI_MODEL || null,
   });
 }
 
