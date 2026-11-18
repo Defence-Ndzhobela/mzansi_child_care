@@ -6,6 +6,14 @@ import { IMAGES } from '../../config/images';
 import { useAuth } from '../../context/AuthContext';
 import { dashboardPathFor } from '../../utils/roles';
 
+const DEMO_PASSWORD = 'Defence02@mzansi.';
+const DEMO_ACCOUNTS = [
+  { label: 'Caregiver · Receiving', email: 'lerato@gmail.com', accent: true },
+  { label: 'Caregiver · Paying', email: 'thabo@gmail.com', accent: false },
+  { label: 'Social worker', email: 'mawila@gmail.com', accent: false },
+  { label: 'Admin account', email: 'admin@gmail.com', accent: false },
+];
+
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -81,7 +89,7 @@ export function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="parent@demo.co.za"
+                placeholder="name@example.com"
                 className="mt-1 block w-full rounded-sm border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#006847] focus:outline-none"
               />
             </div>
@@ -123,57 +131,29 @@ export function LoginPage() {
           <div className="border border-slate-200 bg-slate-50 p-4 rounded-sm">
             <h2 className="font-display text-base font-semibold text-[#0F2942]">Demo accounts</h2>
             <p className="mt-1 text-xs text-slate-600">
-              Demo accounts use the database. Do not reuse a real password.
+              These accounts are provided for project demonstration and testing purposes. Use them to explore the
+              system's features.
             </p>
 
             <div className="mt-3 space-y-2">
-              <div className="border border-slate-200 bg-white p-3 rounded-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[#006847]">Caregiver · Receiving</p>
-                  <button
-                    type="button"
-                    onClick={() => fillDemo('parent@demo.co.za', 'Demo@12345')}
-                    className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
-                  >
-                    Use account
-                  </button>
+              {DEMO_ACCOUNTS.map((account) => (
+                <div key={account.email} className="border border-slate-200 bg-white p-3 rounded-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={`text-xs font-semibold ${account.accent ? 'text-[#006847]' : 'text-[#0F2942]'}`}>
+                      {account.label}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => fillDemo(account.email, DEMO_PASSWORD)}
+                      className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
+                    >
+                      Use account
+                    </button>
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-slate-800">{account.email}</p>
+                  <p className="font-mono text-xs text-slate-800">Password: {DEMO_PASSWORD}</p>
                 </div>
-                <p className="mt-1 font-mono text-xs text-slate-800">
-                  parent@demo.co.za / Demo@12345
-                </p>
-              </div>
-
-              <div className="border border-slate-200 bg-white p-3 rounded-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[#0F2942]">Caregiver · Paying</p>
-                  <button
-                    type="button"
-                    onClick={() => fillDemo('sipho@demo.co.za', 'Demo@12345')}
-                    className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
-                  >
-                    Use account
-                  </button>
-                </div>
-                <p className="mt-1 font-mono text-xs text-slate-800">
-                  sipho@demo.co.za / Demo@12345
-                </p>
-              </div>
-
-              <div className="border border-slate-200 bg-white p-3 rounded-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[#0F2942]">Social worker</p>
-                  <button
-                    type="button"
-                    onClick={() => fillDemo('worker@demo.co.za', 'Demo@12345')}
-                    className="rounded-sm border border-slate-300 px-2.5 py-1 text-xs font-medium text-[#0F2942] hover:bg-slate-50"
-                  >
-                    Use account
-                  </button>
-                </div>
-                <p className="mt-1 font-mono text-xs text-slate-800">
-                  worker@demo.co.za / Demo@12345
-                </p>
-              </div>
+              ))}
             </div>
           </div>
         </div>
