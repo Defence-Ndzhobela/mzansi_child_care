@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -27,6 +27,8 @@ export function Modal({
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, onClose]);
 
+  const pressedOnBackdrop = useRef(false);
+
   if (!isOpen) return null;
 
   const widthClass =
@@ -44,8 +46,14 @@ export function Modal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
+      // Close only when the press and the release both land on the backdrop. Selecting text in a field and
+      // letting go outside the box would otherwise count as a backdrop click and discard the form.
+      onMouseDown={(e) => {
+        pressedOnBackdrop.current = e.target === e.currentTarget;
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && pressedOnBackdrop.current) onClose();
+        pressedOnBackdrop.current = false;
       }}
     >
       <div className={`w-full ${widthClass} bg-white border border-slate-200 rounded-sm shadow-sm my-8`}>
